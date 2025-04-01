@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Three.js iPod Model with Toggle Zoom</title>
+    <style>
+        body { margin: 0; }
+        canvas { display: block; }
+        #view-indicator {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            color: white;
+            background-color: rgba(0,0,0,0.5);
+            padding: 10px;
+            font-family: Arial, sans-serif;
+            border-radius: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div id="view-indicator">Current View: Default</div>
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.163.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.163.0/examples/jsm/"
+            }
+        }
+    </script>
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+        // --- Basic Setup ---
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0xcccccc);
+
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.z = 15;
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        // --- Lighting ---
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+        scene.add(ambientLight);
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        directionalLight.position.set(5, 10, 7.5);
+        scene.add(directionalLight);
+
+        // Controls
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.05;
+
+        // --- IPOD MODEL CODE ---
+        const ipodWidth = 5.5;
+        const ipodHeight = 10;
+        const ipodDepth = 1;
+        const screenWidth = 4;
+        const screenHeight = 3;
+        const wheelOuterRadius = 2;
+        const wheelInnerRadius = 0.8;
+        const buttonRadius = wheelInnerRadius * 0.8;
+
+        const ipodGroup = new THREE.Group();
+        scene.add(ipodGroup);
+
+        // 1. iPod Body
+        const bodyGeometry = new THREE.BoxGeometry(ipodWidth, ipodHeight, ipodDepth);
+        const frontMaterial = new THREE.MeshStandardMaterial({
+            color: 0xffffff,
+            roughness: 0.6,
+            metalness: 0.1
+        });
+        const backMaterial = new THREE.MeshStandardMaterial({
+            color: 0xcccccc,
+            metalness: 0.9,
+            roughness: 0.1
+        });
+        const edgeMaterial = new THREE.MeshStandardMaterial({
+            color: 0xffffff,
+            roughness: 0.6,
+            metalness: 0.1
+        });
+
+        const bodyMaterials = [
+            edgeMaterial, edgeMaterial, edgeMaterial, edgeMaterial,
+            frontMaterial, backMaterial
+        ];
+
+        const ipodBody = new THREE.Mesh(bodyGeometry, bodyMaterials);
+        ipodGroup.add(ipodBody);
+
+        // 2. Screen
+        const screenGeometry = new THREE.PlaneGeometry(screenWidth, screenHeight);
+        const screenMaterial = new THREE.MeshBasicMaterial({
+            color: 0x000000
+        });
+        const screenMesh = new THREE.Mesh(screenGeometry, screenMaterial);
+        screenMesh.position.z = ipodDepth / 2 + 0.01;
+        screenMesh.position.y = (ipodHeight / 2) * 0.3;
+        ipodGroup.add(screenMesh);
+
+        // 3. Click Wheel
+        const clickWheelGroup = new THREE.Group();
+        clickWheelGroup.position.y = -(ipodHeight / 2) * 0.35;
+        clickWheelGroup.position.z = ipodDepth / 2 + 0.01;
+        ipodGroup.add(clickWheelGroup);
+
+        // a) Outer Ring
+        const wheelRingGeometry = new THREE.RingGeometry(
+            wheelInnerRadius, wheelOuterRadius, 32
+        );
+        const wheelRingMaterial = new THREE.MeshStandardMaterial({
+            color: 0xe0e0e0,
+            roughness: 0.7
+        });
+        const wheelRingMesh = new THREE.Mesh(wheelRingGeometry, wheelRingMaterial);
+        clickWheelGroup.add(wheelRingMesh);
+
+        // b) Center Button
+        const centerButtonGeometry = new THREE.CircleGeometry(buttonRadius, 32);
+        const centerButtonMaterial = new THREE.MeshStandardMaterial({
+            color: 0xf0f0f0,
+            roughness: 0.7
+        });
+        const centerButtonMesh = new THREE.Mesh(centerButtonGeometry, centerButtonMaterial);
+        clickWheelGroup.add(centerButtonMesh);
+
+        // --- View State Management ---
+        const views = {
+            default: {
+                position: new THREE.Vector3(0, 0, 15),
+                target: new THREE.Vector3(0, 0, 0),
+                label: "Default View"
+            },
+            front: {
+                position: new THREE.Vector3(0, 0, 10),
+                target: new THREE.Vector3(0, 0, 0),
+                label: "Front View"
+            },
+            screen: {
+                position: new THREE.Vector3(0, 1.5, 5),
+                target: new THREE.Vector3(0, 1.5, 0),
+                label: "Screen Zoom"
+            }
+        };
+
+        let currentView = 'default';
+        const viewIndicator = document.getElementById('view-indicator');
+
+        // --- View Transition Functions ---
+        function isFacingForward() {
+            // Create a vector pointing in the direction the camera is facing
+            const cameraDirection = new THREE.Vector3();
+            camera.getWorldDirection(cameraDirection);
+            
+            // The forward direction is along negative Z axis
+            const forward = new THREE.Vector3(0, 0, -1);
+            
+            // Check if camera is facing roughly forward (within 30 degrees)
+            return cameraDirection.dot(forward) > 0.866; // cos(30°)
+        }
+
+        function isCentered() {
+            // Get camera's look-at point
+            const cameraDirection = new THREE.Vector3();
+            camera.getWorldDirection(cameraDirection);
+            const lookAtPoint = new THREE.Vector3().copy(camera.position).add(cameraDirection);
+            
+            // Check if looking near the center of the iPod (within 1 unit)
+            return lookAtPoint.length() < 1;
+        }
+
+        function transitionToView(viewName) {
+            const view = views[viewName];
+            if (!view) return;
+            
+            controls.enabled = false;
+            currentView = viewName;
+            viewIndicator.textContent = `Current View: ${view.label}`;
+            
+            const duration = 600;
+            const startTime = Date.now();
+            const startPosition = camera.position.clone();
+            const startTarget = controls.target.clone();
+            
+            const animateTransition = () => {
+                const elapsed = Date.now() - startTime;
+                const progress = Math.min(elapsed / duration, 1);
+                
+                // Cubic easing for smooth start and end
+                const easeProgress = progress < 0.5 ? 
+                    4 * progress * progress * progress : 
+                    1 - Math.pow(-2 * progress + 2, 3) / 2;
+                
+                // Interpolate position
+                camera.position.lerpVectors(startPosition, view.position, easeProgress);
+                
+                // Interpolate look-at target
+                controls.target.lerpVectors(startTarget, view.target, easeProgress);
+                
+                if (progress < 1) {
+                    requestAnimationFrame(animateTransition);
+                } else {
+                    controls.enabled = true;
+                }
+            };
+            
+            animateTransition();
+        }
+
+        function handleSpacebar() {
+            if (currentView === 'default') {
+                // First check if we're roughly facing forward and centered
+                if (isFacingForward() && isCentered()) {
+                    transitionToView('front');
+                } else {
+                    // If not centered, first go to front view
+                    transitionToView('front');
+                }
+            } 
+            else if (currentView === 'front') {
+                // From front view, zoom to screen
+                transitionToView('screen');
+            }
+            else {
+                // From any other view, return to default
+                transitionToView('default');
+            }
+        }
+
+        // --- Event Listeners ---
+        document.addEventListener('keydown', (event) => {
+            if (event.code === 'Space') {
+                event.preventDefault();
+                handleSpacebar();
+            }
+        });
+
+        // --- Animation Loop ---
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+            renderer.render(scene, camera);
+        }
+        animate();
+
+        // --- Handle Window Resize ---
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+    </script>
+</body>
+</html>
