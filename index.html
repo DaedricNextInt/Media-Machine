@@ -184,6 +184,7 @@
 
         
         // --- Create Sidebar Elements ---
+        // --- Create Sidebar Elements ---
         function createSidebarElements() {
             if (!loadedFont) return;
 
@@ -191,49 +192,32 @@
             const sidebarHeight = screenHeight * 0.9;
             const textSize = 0.2;
 
-            /* GRID CONFIGURATION */
-            const cols = 4 ;
+            /* HORIZONTAL LAYOUT */
             const padding = 0.5;
-            
-            const itemWidth = sidebarWidth / cols * 0.8; // Shrink item width a bit
-            const itemHeight = itemWidth * 0.8;
+            const itemHeight = 0.8; // Fixed height for horizontal layout
+            const spacingX = 0.6; // Horizontal spacing between items
+            const itemWidth = 1.2; // Consistent width for folder items
 
-            const spacingX = itemWidth * 1.2; // Add spacing
-            const spacingY = itemHeight * 1.4;
-
-
-
-
-            const gridStartX = -sidebarWidth/2 + itemWidth/2 + padding;
-            const gridStartY = sidebarHeight/2 - itemHeight/2 - padding;
-
-
-
-
+            const startX = -sidebarWidth / 2 + padding + itemWidth / 2;
+            const yPos = screenHeight / 2 - padding - itemHeight / 2; // Single row, fixed Y position
 
             // Clear previous directory items
-            // Determine existing directory indexes already in the group
-            const existingIndexes = new Set(
-                sidebarGroup.children
-                    .filter(child => child.userData?.type?.startsWith('directory'))
-                    .map(child => child.userData.index)
-            );
+            const childrenToRemove = [];
+            sidebarGroup.children.forEach(child => {
+                if (child.userData?.type?.startsWith('directory') || child.userData?.type === 'directoryItem') {
+                    childrenToRemove.push(child);
+                }
+            });
+            childrenToRemove.forEach(child => {
+                sidebarGroup.remove(child);
+                if (clickableMeshes.sidebar.includes(child)) {
+                    clickableMeshes.sidebar.splice(clickableMeshes.sidebar.indexOf(child), 1);
+                }
+            });
 
-
-            // Add directories in grid layout
-
-            let tileCount = 0; // grid index for positioning, not dir index
+            let currentX = startX;
 
             musicDirectories.forEach((dir, index) => {
-                // if (existingNames.has(dir.name)) return;
-               
-                const col = tileCount % cols;
-                const row = Math.floor(tileCount / cols);
-                
-                const xPos = gridStartX + col * spacingX;
-                const yPos = gridStartY - row * spacingY;
-
-                
                 // Folder background
                 const folderBgGeometry = new RoundedBoxGeometry(itemWidth, itemHeight, 0.01, 0.1);
                 const folderBgMaterial = new THREE.MeshBasicMaterial({
@@ -242,7 +226,7 @@
                     transparent: true
                 });
                 const folderBg = new THREE.Mesh(folderBgGeometry, folderBgMaterial);
-                folderBg.position.set(xPos, yPos, 0);
+                folderBg.position.set(currentX, yPos, 0);
                 folderBg.userData = { type: 'directoryBg', index: index };
                 sidebarGroup.add(folderBg);
 
@@ -254,14 +238,9 @@
                     opacity: 0.9
                 });
                 const iconMesh = new THREE.Mesh(iconGeometry, iconMaterial);
-                iconMesh.position.set(xPos, yPos + itemHeight * 0.1, 0.01);
+                iconMesh.position.set(currentX, yPos + itemHeight * 0.1, 0.01);
                 iconMesh.userData = { type: 'directoryIcon', index: index };
                 sidebarGroup.add(iconMesh);
-
-
-
-
-
 
                 // Directory name
                 let displayName = dir.name;
@@ -279,7 +258,7 @@
                     transparent: true,
                     opacity: 0.9
                 }));
-                nameMesh.position.set(xPos, yPos - itemHeight * 0.3, 0.02);
+                nameMesh.position.set(currentX, yPos - itemHeight * 0.3, 0.02);
                 nameMesh.userData = { type: 'directoryText', index: index };
                 sidebarGroup.add(nameMesh);
 
@@ -288,47 +267,32 @@
                     new THREE.PlaneGeometry(itemWidth, itemHeight),
                     new THREE.MeshBasicMaterial({ visible: false })
                 );
-                clickPlane.position.set(xPos, yPos, 0.03);
-                clickPlane.userData = { 
-                    type: 'directoryItem', 
+                clickPlane.position.set(currentX, yPos, 0.03);
+                clickPlane.userData = {
+                    type: 'directoryItem',
                     index: index,
                     dirName: dir.name
                 };
                 sidebarGroup.add(clickPlane);
                 clickableMeshes.sidebar.push(clickPlane);
-                
-                tileCount++;
+
+                currentX += itemWidth + spacingX;
             });
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
             // Add button at the top if it doesn't exist
-            if (!sidebarGroup.children.some(child => child.userData?.type === 'addMusicButton')) {
-                const addButtonGeometry = new THREE.PlaneGeometry(itemWidth, itemHeight);
+            const addButtonExists = sidebarGroup.children.some(child => child.userData?.type === 'addMusicButton');
+            const addButtonY = screenHeight / 2 - padding - itemHeight * 1.5; // Position above the directory row
+            const addButtonX = -sidebarWidth / 2 + padding + itemWidth / 2; // Align with the start of the row
+
+            if (!addButtonExists) {
+                const addButtonGeometry = new RoundedBoxGeometry(itemWidth, itemHeight * 0.8, 0.01, 0.1);
                 const addButtonMaterial = new THREE.MeshBasicMaterial({
                     color: 0x333333,
                     opacity: 0.95,
                     transparent: true
                 });
                 const addButtonMesh = new THREE.Mesh(addButtonGeometry, addButtonMaterial);
-               
-                const addButtonYOffset = itemHeight * 1.2; // Extra spacing above row 0
-                addButtonMesh.position.set(0, gridStartY + addButtonYOffset, 0.01);
-
+                addButtonMesh.position.set(addButtonX, addButtonY, 0.01);
 
                 const addTextGeometry = new TextGeometry("+", {
                     font: loadedFont,
@@ -337,17 +301,18 @@
                 });
                 addTextGeometry.computeBoundingBox();
                 addTextGeometry.translate(-(addTextGeometry.boundingBox.max.x - addTextGeometry.boundingBox.min.x)/2, -textSize/2, 0.01);
-                const addTextMesh = new THREE.Mesh(addTextGeometry, new THREE.MeshBasicMaterial({ 
+                const addTextMesh = new THREE.Mesh(addTextGeometry, new THREE.MeshBasicMaterial({
                     color: 0xffffff,
                     transparent: true,
                     opacity: 0.9
                 }));
                 addTextMesh.position.copy(addButtonMesh.position);
                 addTextMesh.position.z += 0.01;
+                addTextMesh.userData = { type: 'addMusicButtonText' }; // Added userData for the + sign
                 sidebarGroup.add(addTextMesh);
 
                 const addClickPlane = new THREE.Mesh(
-                    new THREE.PlaneGeometry(itemWidth, itemHeight),
+                    new THREE.PlaneGeometry(itemWidth, itemHeight * 0.8),
                     new THREE.MeshBasicMaterial({ visible: false })
                 );
                 addClickPlane.position.copy(addButtonMesh.position);
@@ -355,6 +320,13 @@
                 addClickPlane.userData = { type: 'addMusicButton' };
                 sidebarGroup.add(addClickPlane);
                 clickableMeshes.sidebar.push(addClickPlane);
+            } else {
+                // If the button exists, ensure its position is correct
+                sidebarGroup.children.forEach(child => {
+                    if (child.userData?.type === 'addMusicButton' || child.userData?.type === 'addMusicButtonText') {
+                        child.position.set(addButtonX, addButtonY, child.position.z);
+                    }
+                });
             }
         }
 
@@ -375,17 +347,17 @@
 
         function selectDirectory(index) {
             if (index < 0 || index >= musicDirectories.length) return;
-            
+
             selectedDirectoryIndex = index;
             const dirName = musicDirectories[index].name;
             currentMusicLibrary = allMusicLibrary[dirName] || [];
-            
+
             selectedMusicItem = 0;
             musicPageScrollOffset = 0;
-            
+
             updateDirectoryHighlights();
             createMusicPageElements();
-            
+
             console.log(`Selected directory: ${dirName} with ${currentMusicLibrary.length} songs`);
         }
 
@@ -549,7 +521,6 @@
             }
         }
 
-
         function updateMenuSelection(newIndex) {
             if (currentPage !== 'mainMenu' || !menuGroup || menuItems.length === 0) return;
 
@@ -587,7 +558,7 @@
             } else if (selectedDisplayIndex >= ITEMS_PER_SCREEN) {
                 musicPageScrollOffset = selectedMusicItem - ITEMS_PER_SCREEN + 1;
             }
-            
+
             musicPageScrollOffset = Math.max(0, Math.min(musicPageScrollOffset, currentMusicLibrary.length - ITEMS_PER_SCREEN));
             if (currentMusicLibrary.length <= ITEMS_PER_SCREEN) musicPageScrollOffset = 0;
 
@@ -664,10 +635,10 @@
             for (let i = 0; i < files.length; i++) {
                 const file = files[i];
                 const pathParts = file.webkitRelativePath.split('/');
-                
+
                 if (pathParts.length > 1) {
                     const dirName = pathParts[0];
-                    
+
                     if (!newDirectories.has(dirName)) {
                         newDirectories.set(dirName, {
                             name: dirName,
@@ -675,7 +646,7 @@
                             files: []
                         });
                     }
-                    
+
                     if (file.name.match(/\.(mp3|wav|ogg|m4a|flac|aac)$/i) && file.size > 0) {
                         newDirectories.get(dirName).files.push({
                             name: file.name,
@@ -687,8 +658,9 @@
             }
 
             // Update state
-            musicDirectories = Array.from(newDirectories.values()).sort((a, b) => a.name.localeCompare(b.name));
-            
+            const newDirsArray = Array.from(newDirectories.values());
+            musicDirectories = [...musicDirectories, ...newDirsArray].sort((a, b) => a.name.localeCompare(b.name));
+
             allMusicLibrary = {};
             musicDirectories.forEach(dir => {
                 allMusicLibrary[dir.name] = dir.files.sort((a, b) => a.name.localeCompare(b.name));
@@ -698,7 +670,23 @@
             if (selectedDirectoryIndex === -1 && musicDirectories.length > 0) {
                 selectedDirectoryIndex = 0;
                 currentMusicLibrary = allMusicLibrary[musicDirectories[0].name] || [];
+            } else if (newDirsArray.length > 0 && selectedDirectoryIndex === -1) {
+                // If new directories were added and no directory was previously selected,
+                // select the first of the newly added directories.
+                const firstNewDirIndex = musicDirectories.findIndex(dir => newDirsArray.some(newDir => newDir.name === dir.name));
+                if (firstNewDirIndex !== -1) {
+                    selectedDirectoryIndex = firstNewDirIndex;
+                    currentMusicLibrary = allMusicLibrary[musicDirectories[selectedDirectoryIndex].name] || [];
+                }
+            } else if (newDirsArray.length > 0 && selectedDirectoryIndex !== -1) {
+                // If new directories are added and a directory is already selected,
+                // keep the current selection.
+            } else if (musicDirectories.length > 0 && selectedDirectoryIndex >= musicDirectories.length) {
+                // Handle case where previously selected index is out of bounds
+                selectedDirectoryIndex = musicDirectories.length - 1;
+                currentMusicLibrary = allMusicLibrary[musicDirectories[selectedDirectoryIndex].name] || [];
             }
+
 
             console.log(`Loaded ${musicDirectories.length} directories with ${Object.values(allMusicLibrary).flat().length} songs`);
 
@@ -716,6 +704,7 @@
         const mouse = new THREE.Vector2();
         let isDragging = false;
         let clickStartPosition = new THREE.Vector2();
+        let currentView = 'screen'; // Add a variable to track the current view
 
         function onPointerMove(event) {
             mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
@@ -762,162 +751,48 @@
                     }
                 }
             }
-            isDragging = false;
         }
 
-        // --- View Management ---
-        const views = {
-            default: { position: new THREE.Vector3(0, 0, 15), target: new THREE.Vector3(0, 0, 0), label: "Default View" },
-            front: { position: new THREE.Vector3(0, 0, 10), target: new THREE.Vector3(0, 0, 0), label: "Front View" },
-            screen: { position: new THREE.Vector3(0, screenMesh.position.y, 6), target: new THREE.Vector3(0, screenMesh.position.y, 0), label: "Screen Zoom" }
-        };
-        let currentView = 'default';
-        const viewIndicator = document.getElementById('view-indicator');
-        let isTransitioning = false;
-
-        function transitionToView(viewName) {
-            const targetView = views[viewName];
-            if (!targetView || isTransitioning || currentView === viewName) return;
-
-            isTransitioning = true;
-            controls.enabled = false;
-            currentView = viewName;
-            viewIndicator.textContent = `Current View: ${targetView.label}`;
-
-            const duration = 600;
-            const startTime = Date.now();
-            const startPosition = camera.position.clone();
-            const startTarget = controls.target.clone();
-
-            const animateTransition = () => {
-                const elapsed = Date.now() - startTime;
-                const progress = Math.min(elapsed / duration, 1);
-                const easeProgress = 0.5 * (1 - Math.cos(Math.PI * progress));
-
-                camera.position.lerpVectors(startPosition, targetView.position, easeProgress);
-                controls.target.lerpVectors(startTarget, targetView.target, easeProgress);
-                controls.update();
-
-                if (progress < 1) {
-                    requestAnimationFrame(animateTransition);
-                } else {
-                    camera.position.copy(targetView.position);
-                    controls.target.copy(targetView.target);
-                    controls.update();
-                    controls.enabled = true;
-                    isTransitioning = false;
+        function onKeyDown(event) {
+            if (currentPage === 'mainMenu') {
+                if (event.key === 'ArrowUp') {
+                    updateMenuSelection(selectedMenuItem - 1);
+                } else if (event.key === 'ArrowDown') {
+                    updateMenuSelection(selectedMenuItem + 1);
+                } else if (event.key === 'Enter') {
+                    selectMenuItem(selectedMenuItem);
                 }
-            };
-            animateTransition();
-        }
-
-        function handleSpacebar() {
-            if (currentView === 'default') {
-                transitionToView('front');
-            } else if (currentView === 'front') {
-                transitionToView('screen');
-            } else {
-                transitionToView('default');
+            } else if (currentPage === 'musicPage') {
+                if (event.key === 'ArrowUp') {
+                    updateMusicSelection(-1);
+                } else if (event.key === 'ArrowDown') {
+                    updateMusicSelection(1);
+                } else if (event.key === 'Enter') {
+                    selectMusicItem(selectedMusicItem);
+                } else if (event.key === 'Escape') {
+                    goBackToMainMenu();
+                }
             }
         }
 
-        function isMouseOverSidebar() {
-            if (!sidebarGroup.visible) return false;
-            
-            raycaster.setFromCamera(mouse, camera);
-            const intersects = raycaster.intersectObjects(clickableMeshes.sidebar);
-            return intersects.length > 0;
-        }
-
-        // --- Event Listeners ---
         window.addEventListener('pointermove', onPointerMove);
         window.addEventListener('pointerdown', onPointerDown);
         window.addEventListener('pointerup', onPointerUp);
+        window.addEventListener('keydown', onKeyDown);
 
-        document.addEventListener('keydown', (event) => {
-            if (currentView === 'screen' && ['ArrowUp', 'ArrowDown', 'Enter', 'Escape', 'Space'].includes(event.code)) {
-                event.preventDefault();
-            } else if (event.code === 'Space') {
-                event.preventDefault();
-            }
-
-            switch (event.code) {
-                case 'Space':
-                    handleSpacebar();
-                    break;
-                case 'ArrowUp':
-                    if (currentView === 'screen' && currentPage === 'musicPage') {
-                        if (isMouseOverSidebar()) {
-                            updateSidebarSelection(selectedDirectoryIndex - 1);
-                        } else {
-                            updateMusicSelection(-1);
-                        }
-                    }
-                    break;
-                case 'ArrowDown':
-                    if (currentView === 'screen' && currentPage === 'musicPage') {
-                        if (isMouseOverSidebar()) {
-                            updateSidebarSelection(selectedDirectoryIndex + 1);
-                        } else {
-                            updateMusicSelection(1);
-                        }
-                    }
-                    break;
-                case 'Enter':
-                    if (currentView === 'screen') {
-                        if (currentPage === 'mainMenu') {
-                            selectMenuItem(selectedMenuItem);
-                        } else if (currentPage === 'musicPage') {
-                            if (isMouseOverSidebar()) {
-                                selectDirectory(selectedDirectoryIndex);
-                            } else {
-                                if (currentMusicLibrary.length === 0) {
-                                    addMusicFolder();
-                                } else {
-                                    selectMusicItem(selectedMusicItem);
-                                }
-                            }
-                        }
-                    }
-                    break;
-                case 'Escape':
-                case 'Backspace':
-                    handleBackButton();
-                    break;
-                case 'ArrowLeft':
-                    if (currentView === 'screen' && currentPage === 'musicPage') {
-                        if (!isMouseOverSidebar()) {
-                            updateSidebarSelection(selectedDirectoryIndex);
-                        }
-                    }
-                    break;
-                case 'ArrowRight':
-                    if (currentView === 'screen' && currentPage === 'musicPage') {
-                        if (isMouseOverSidebar()) {
-                            updateMusicSelection(0);
-                        }
-                    }
-                    break;
-            }
-        });
-
-        // --- Animation Loop ---
+        // --- Render Loop ---
         function animate() {
             requestAnimationFrame(animate);
-            if (controls.enabled) {
-                controls.update();
-            }
+            controls.update();
             renderer.render(scene, camera);
         }
         animate();
 
-        // --- Handle Window Resize ---
         window.addEventListener('resize', () => {
             camera.aspect = window.innerWidth / window.innerHeight;
             camera.updateProjectionMatrix();
             renderer.setSize(window.innerWidth, window.innerHeight);
-        });
-
+        }, false);
     </script>
 </body>
 </html>
