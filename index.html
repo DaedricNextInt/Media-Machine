@@ -1,9 +1,9 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Three.js iPod Model with Toggle Zoom</title>
+    <title>iPod Music Player with Folder Grid</title>
     <style>
-        body { margin: 0; }
+        body { margin: 0; overflow: hidden; }
         canvas { display: block; }
         #view-indicator {
             position: absolute;
@@ -14,11 +14,26 @@
             padding: 10px;
             font-family: Arial, sans-serif;
             border-radius: 5px;
+            z-index: 10;
+        }
+        #folder-input {
+            display: none;
+        }
+        #audio-player {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            width: 80%;
+            z-index: 10;
+            opacity: 0.5;
         }
     </style>
 </head>
 <body>
     <div id="view-indicator">Current View: Default</div>
+    <input type="file" id="folder-input" webkitdirectory directory multiple />
+    <audio id="audio-player" controls></audio>
+
     <script type="importmap">
         {
             "imports": {
@@ -30,6 +45,9 @@
     <script type="module">
         import * as THREE from 'three';
         import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { FontLoader } from 'three/addons/loaders/FontLoader.js';
+        import { TextGeometry } from 'three/addons/geometries/TextGeometry.js';
+        import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 
         // --- Basic Setup ---
         const scene = new THREE.Scene();
@@ -49,10 +67,11 @@
         directionalLight.position.set(5, 10, 7.5);
         scene.add(directionalLight);
 
-        // Controls
+        // --- Controls ---
         const controls = new OrbitControls(camera, renderer.domElement);
         controls.enableDamping = true;
         controls.dampingFactor = 0.05;
+        controls.enablePan = false;
 
         // --- IPOD MODEL CODE ---
         const ipodWidth = 5.5;
@@ -60,7 +79,7 @@
         const ipodDepth = 1;
         const screenWidth = 4;
         const screenHeight = 3;
-        const wheelOuterRadius = 2;
+        const wheelOuterRadius = 1.5;
         const wheelInnerRadius = 0.8;
         const buttonRadius = wheelInnerRadius * 0.8;
 
@@ -69,35 +88,16 @@
 
         // 1. iPod Body
         const bodyGeometry = new THREE.BoxGeometry(ipodWidth, ipodHeight, ipodDepth);
-        const frontMaterial = new THREE.MeshStandardMaterial({
-            color: 0xffffff,
-            roughness: 0.6,
-            metalness: 0.1
-        });
-        const backMaterial = new THREE.MeshStandardMaterial({
-            color: 0xcccccc,
-            metalness: 0.9,
-            roughness: 0.1
-        });
-        const edgeMaterial = new THREE.MeshStandardMaterial({
-            color: 0xffffff,
-            roughness: 0.6,
-            metalness: 0.1
-        });
-
-        const bodyMaterials = [
-            edgeMaterial, edgeMaterial, edgeMaterial, edgeMaterial,
-            frontMaterial, backMaterial
-        ];
-
+        const frontMaterial = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.6, metalness: 0.1 });
+        const backMaterial = new THREE.MeshStandardMaterial({ color: 0xcccccc, metalness: 0.9, roughness: 0.1 });
+        const edgeMaterial = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.6, metalness: 0.1 });
+        const bodyMaterials = [edgeMaterial, edgeMaterial, edgeMaterial, edgeMaterial, frontMaterial, backMaterial];
         const ipodBody = new THREE.Mesh(bodyGeometry, bodyMaterials);
         ipodGroup.add(ipodBody);
 
         // 2. Screen
         const screenGeometry = new THREE.PlaneGeometry(screenWidth, screenHeight);
-        const screenMaterial = new THREE.MeshBasicMaterial({
-            color: 0x000000
-        });
+        const screenMaterial = new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.DoubleSide });
         const screenMesh = new THREE.Mesh(screenGeometry, screenMaterial);
         screenMesh.position.z = ipodDepth / 2 + 0.01;
         screenMesh.position.y = (ipodHeight / 2) * 0.3;
@@ -110,140 +110,803 @@
         ipodGroup.add(clickWheelGroup);
 
         // a) Outer Ring
-        const wheelRingGeometry = new THREE.RingGeometry(
-            wheelInnerRadius, wheelOuterRadius, 32
-        );
-        const wheelRingMaterial = new THREE.MeshStandardMaterial({
-            color: 0xe0e0e0,
-            roughness: 0.7
-        });
+        const wheelRingGeometry = new THREE.RingGeometry(wheelInnerRadius, wheelOuterRadius, 32);
+        const wheelRingMaterial = new THREE.MeshStandardMaterial({ color: 0xe0e0e0, roughness: 0.7, side: THREE.DoubleSide });
         const wheelRingMesh = new THREE.Mesh(wheelRingGeometry, wheelRingMaterial);
         clickWheelGroup.add(wheelRingMesh);
 
         // b) Center Button
         const centerButtonGeometry = new THREE.CircleGeometry(buttonRadius, 32);
-        const centerButtonMaterial = new THREE.MeshStandardMaterial({
-            color: 0xf0f0f0,
-            roughness: 0.7
-        });
+        const centerButtonMaterial = new THREE.MeshStandardMaterial({ color: 0xf0f0f0, roughness: 0.7 });
         const centerButtonMesh = new THREE.Mesh(centerButtonGeometry, centerButtonMaterial);
         clickWheelGroup.add(centerButtonMesh);
 
-        // --- View State Management ---
-        const views = {
-            default: {
-                position: new THREE.Vector3(0, 0, 15),
-                target: new THREE.Vector3(0, 0, 0),
-                label: "Default View"
-            },
-            front: {
-                position: new THREE.Vector3(0, 0, 10),
-                target: new THREE.Vector3(0, 0, 0),
-                label: "Front View"
-            },
-            screen: {
-                position: new THREE.Vector3(0, 1.5, 5),
-                target: new THREE.Vector3(0, 1.5, 0),
-                label: "Screen Zoom"
-            }
+        // --- Menu & Music System ---
+        let selectedMenuItem = 0;
+        const menuItems = ["Music", "Photos", "Videos", "Podcasts", "Extras", "Settings", "Shuffle Songs"];
+        const menuGroup = new THREE.Group();
+        menuGroup.position.z = ipodDepth / 2 + 0.02;
+        menuGroup.position.y = screenMesh.position.y;
+        menuGroup.visible = true;
+        ipodGroup.add(menuGroup);
+
+        // Music library state
+        let allMusicLibrary = {};
+        let currentMusicLibrary = [];
+        let selectedMusicItem = 0;
+        let musicPageScrollOffset = 0;
+        const ITEMS_PER_SCREEN = 5;
+
+        let currentPage = 'mainMenu';
+        let loadedFont = null;
+
+        const musicPageGroup = new THREE.Group();
+        musicPageGroup.position.z = ipodDepth / 2 + 0.02;
+        musicPageGroup.position.y = screenMesh.position.y;
+        musicPageGroup.visible = false;
+        ipodGroup.add(musicPageGroup);
+
+        // --- Music Directory Sidebar ---
+        const sidebarGroup = new THREE.Group();
+        sidebarGroup.position.z = ipodDepth / 2 + 0.03;
+        sidebarGroup.position.x = screenWidth / 2 + 2 ;
+        sidebarGroup.position.y = screenMesh.position.y;
+        sidebarGroup.visible = true;
+        ipodGroup.add(sidebarGroup);
+
+        let musicDirectories = [];
+        let selectedDirectoryIndex = -1;
+
+        // Store meshes for raycasting
+        const clickableMeshes = {
+            mainMenu: [],
+            musicPage: [],
+            sidebar: []
         };
 
+        // Audio Player Element
+        const audioElement = document.getElementById('audio-player');
+        let currentObjectUrl = null;
+
+        // --- Font Loading ---
+        const fontLoader = new FontLoader();
+        fontLoader.load('https://threejs.org/examples/fonts/helvetiker_regular.typeface.json', (font) => {
+            loadedFont = font;
+            createMenuItems();
+            createMusicPageElements();
+            createSidebarElements();
+        });
+
+
+
+
+
+
+        
+        // --- Create Sidebar Elements ---
+        function createSidebarElements() {
+            if (!loadedFont) return;
+
+            const sidebarWidth = 2.5;
+            const sidebarHeight = screenHeight * 0.9;
+            const textSize = 0.2;
+
+            /* GRID CONFIGURATION */
+            const cols = 4 ;
+            const padding = 0.5;
+            
+            const itemWidth = sidebarWidth / cols * 0.8; // Shrink item width a bit
+            const itemHeight = itemWidth * 0.8;
+
+            const spacingX = itemWidth * 1.2; // Add spacing
+            const spacingY = itemHeight * 1.4;
+
+
+
+
+            const gridStartX = -sidebarWidth/2 + itemWidth/2 + padding;
+            const gridStartY = sidebarHeight/2 - itemHeight/2 - padding;
+
+
+
+
+
+            // Clear previous directory items
+            // Determine existing directory indexes already in the group
+            const existingIndexes = new Set(
+                sidebarGroup.children
+                    .filter(child => child.userData?.type?.startsWith('directory'))
+                    .map(child => child.userData.index)
+            );
+
+
+            // Add directories in grid layout
+
+            let tileCount = 0; // grid index for positioning, not dir index
+
+            musicDirectories.forEach((dir, index) => {
+                // if (existingNames.has(dir.name)) return;
+               
+                const col = tileCount % cols;
+                const row = Math.floor(tileCount / cols);
+                
+                const xPos = gridStartX + col * spacingX;
+                const yPos = gridStartY - row * spacingY;
+
+                
+                // Folder background
+                const folderBgGeometry = new RoundedBoxGeometry(itemWidth, itemHeight, 0.01, 0.1);
+                const folderBgMaterial = new THREE.MeshBasicMaterial({
+                    color: index === selectedDirectoryIndex ? 0x4a90e2 : 0x333333,
+                    opacity: 0.8,
+                    transparent: true
+                });
+                const folderBg = new THREE.Mesh(folderBgGeometry, folderBgMaterial);
+                folderBg.position.set(xPos, yPos, 0);
+                folderBg.userData = { type: 'directoryBg', index: index };
+                sidebarGroup.add(folderBg);
+
+                // Folder icon
+                const iconGeometry = new THREE.BoxGeometry(itemWidth * 0.6, itemHeight * 0.4, 0.01);
+                const iconMaterial = new THREE.MeshBasicMaterial({
+                    color: index === selectedDirectoryIndex ? 0xffffff : 0x888888,
+                    transparent: true,
+                    opacity: 0.9
+                });
+                const iconMesh = new THREE.Mesh(iconGeometry, iconMaterial);
+                iconMesh.position.set(xPos, yPos + itemHeight * 0.1, 0.01);
+                iconMesh.userData = { type: 'directoryIcon', index: index };
+                sidebarGroup.add(iconMesh);
+
+
+
+
+
+
+                // Directory name
+                let displayName = dir.name;
+                if (displayName.length > 8) displayName = displayName.substring(0, 6) + '...';
+
+                const nameGeometry = new TextGeometry(displayName, {
+                    font: loadedFont,
+                    size: textSize,
+                    height: 0.01
+                });
+                nameGeometry.computeBoundingBox();
+                nameGeometry.translate(-(nameGeometry.boundingBox.max.x - nameGeometry.boundingBox.min.x)/2, -textSize/2, 0.01);
+                const nameMesh = new THREE.Mesh(nameGeometry, new THREE.MeshBasicMaterial({
+                    color: 0xffffff,
+                    transparent: true,
+                    opacity: 0.9
+                }));
+                nameMesh.position.set(xPos, yPos - itemHeight * 0.3, 0.02);
+                nameMesh.userData = { type: 'directoryText', index: index };
+                sidebarGroup.add(nameMesh);
+
+                // Clickable area
+                const clickPlane = new THREE.Mesh(
+                    new THREE.PlaneGeometry(itemWidth, itemHeight),
+                    new THREE.MeshBasicMaterial({ visible: false })
+                );
+                clickPlane.position.set(xPos, yPos, 0.03);
+                clickPlane.userData = { 
+                    type: 'directoryItem', 
+                    index: index,
+                    dirName: dir.name
+                };
+                sidebarGroup.add(clickPlane);
+                clickableMeshes.sidebar.push(clickPlane);
+                
+                tileCount++;
+            });
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            // Add button at the top if it doesn't exist
+            if (!sidebarGroup.children.some(child => child.userData?.type === 'addMusicButton')) {
+                const addButtonGeometry = new THREE.PlaneGeometry(itemWidth, itemHeight);
+                const addButtonMaterial = new THREE.MeshBasicMaterial({
+                    color: 0x333333,
+                    opacity: 0.95,
+                    transparent: true
+                });
+                const addButtonMesh = new THREE.Mesh(addButtonGeometry, addButtonMaterial);
+               
+                const addButtonYOffset = itemHeight * 1.2; // Extra spacing above row 0
+                addButtonMesh.position.set(0, gridStartY + addButtonYOffset, 0.01);
+
+
+                const addTextGeometry = new TextGeometry("+", {
+                    font: loadedFont,
+                    size: textSize * 1.5,
+                    height: 0.01
+                });
+                addTextGeometry.computeBoundingBox();
+                addTextGeometry.translate(-(addTextGeometry.boundingBox.max.x - addTextGeometry.boundingBox.min.x)/2, -textSize/2, 0.01);
+                const addTextMesh = new THREE.Mesh(addTextGeometry, new THREE.MeshBasicMaterial({ 
+                    color: 0xffffff,
+                    transparent: true,
+                    opacity: 0.9
+                }));
+                addTextMesh.position.copy(addButtonMesh.position);
+                addTextMesh.position.z += 0.01;
+                sidebarGroup.add(addTextMesh);
+
+                const addClickPlane = new THREE.Mesh(
+                    new THREE.PlaneGeometry(itemWidth, itemHeight),
+                    new THREE.MeshBasicMaterial({ visible: false })
+                );
+                addClickPlane.position.copy(addButtonMesh.position);
+                addClickPlane.position.z += 0.02;
+                addClickPlane.userData = { type: 'addMusicButton' };
+                sidebarGroup.add(addClickPlane);
+                clickableMeshes.sidebar.push(addClickPlane);
+            }
+        }
+
+        function updateDirectoryHighlights() {
+            sidebarGroup.children.forEach(child => {
+                if (child.userData?.type === 'directoryBg') {
+                    child.material.color.setHex(
+                        child.userData.index === selectedDirectoryIndex ? 0x4a90e2 : 0x333333
+                    );
+                }
+                if (child.userData?.type === 'directoryIcon') {
+                    child.material.color.setHex(
+                        child.userData.index === selectedDirectoryIndex ? 0xffffff : 0x888888
+                    );
+                }
+            });
+        }
+
+        function selectDirectory(index) {
+            if (index < 0 || index >= musicDirectories.length) return;
+            
+            selectedDirectoryIndex = index;
+            const dirName = musicDirectories[index].name;
+            currentMusicLibrary = allMusicLibrary[dirName] || [];
+            
+            selectedMusicItem = 0;
+            musicPageScrollOffset = 0;
+            
+            updateDirectoryHighlights();
+            createMusicPageElements();
+            
+            console.log(`Selected directory: ${dirName} with ${currentMusicLibrary.length} songs`);
+        }
+
+        function createMenuItems() {
+            if (!loadedFont) return;
+
+            while (menuGroup.children.length > 0) {
+                menuGroup.remove(menuGroup.children[0]);
+            }
+            clickableMeshes.mainMenu = [];
+
+            const menuItemHeight = screenHeight / (menuItems.length + 1);
+            const textSize = menuItemHeight * 0.5;
+            const startY = (screenHeight / 2) - menuItemHeight;
+
+            menuItems.forEach((item, index) => {
+                const textGeometry = new TextGeometry(item, {
+                    font: loadedFont,
+                    size: textSize,
+                    height: 0.01
+                });
+                textGeometry.computeBoundingBox();
+                const textWidth = textGeometry.boundingBox.max.x - textGeometry.boundingBox.min.x;
+                textGeometry.translate(-textWidth / 2, -textSize/2, 0);
+
+                const textMaterial = new THREE.MeshBasicMaterial({
+                    color: index === selectedMenuItem ? 0xffffff : 0x888888
+                });
+                const textMesh = new THREE.Mesh(textGeometry, textMaterial);
+                textMesh.position.y = startY - index * menuItemHeight;
+                textMesh.position.x = 0;
+                menuGroup.add(textMesh);
+
+                const planeWidth = screenWidth * 0.9;
+                const clickPlane = new THREE.Mesh(
+                    new THREE.PlaneGeometry(planeWidth, menuItemHeight),
+                    new THREE.MeshBasicMaterial({ visible: false })
+                );
+                clickPlane.position.copy(textMesh.position);
+                clickPlane.position.z = textMesh.position.z - 0.001;
+                clickPlane.userData = { type: 'menuItem', index: index };
+                menuGroup.add(clickPlane);
+                clickableMeshes.mainMenu.push(clickPlane);
+            });
+
+            const selectorSize = textSize * 0.8;
+            const selectorGeometry = new THREE.BufferGeometry();
+            const vertices = new Float32Array([
+                0.0, selectorSize / 2, 0.0,
+                selectorSize * 0.8, 0.0, 0.0,
+                0.0, -selectorSize / 2, 0.0
+            ]);
+            selectorGeometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
+            const selectorMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff });
+            const selectorMesh = new THREE.Mesh(selectorGeometry, selectorMaterial);
+            selectorMesh.name = 'menuSelector';
+            selectorMesh.position.set(-(screenWidth / 2) + selectorSize, startY - selectedMenuItem * menuItemHeight, 0);
+            menuGroup.add(selectorMesh);
+        }
+
+        function createMusicPageElements() {
+            if (!loadedFont) return;
+
+            while (musicPageGroup.children.length > 0) {
+                musicPageGroup.remove(musicPageGroup.children[0]);
+            }
+            clickableMeshes.musicPage = [];
+
+            const itemHeight = screenHeight / (ITEMS_PER_SCREEN + 1);
+            const textSize = itemHeight * 0.5;
+            const startY = (screenHeight / 2) - itemHeight;
+            const maxTextWidth = screenWidth * 0.8;
+
+            if (currentMusicLibrary.length === 0) {
+                const noMusicTextGeometry = new TextGeometry(
+                    selectedDirectoryIndex >= 0 ? "No music in this folder" : "No music found",
+                    { font: loadedFont, size: textSize, height: 0.01 }
+                );
+                noMusicTextGeometry.computeBoundingBox();
+                noMusicTextGeometry.translate(-(noMusicTextGeometry.boundingBox.max.x - noMusicTextGeometry.boundingBox.min.x)/2, -textSize/2, 0);
+                const noMusicText = new THREE.Mesh(noMusicTextGeometry, new THREE.MeshBasicMaterial({ color: 0xaaaaaa }));
+                noMusicText.position.y = startY;
+                musicPageGroup.add(noMusicText);
+
+                const addTextGeometry = new TextGeometry("Add Music Folder", {
+                    font: loadedFont, size: textSize, height: 0.01
+                });
+                addTextGeometry.computeBoundingBox();
+                addTextGeometry.translate(-(addTextGeometry.boundingBox.max.x - addTextGeometry.boundingBox.min.x)/2, -textSize/2, 0);
+                const addMusicText = new THREE.Mesh(addTextGeometry, new THREE.MeshBasicMaterial({ color: 0xffffff }));
+                addMusicText.position.y = startY - itemHeight;
+                musicPageGroup.add(addMusicText);
+
+                const planeWidth = screenWidth * 0.9;
+                const clickPlane = new THREE.Mesh(
+                    new THREE.PlaneGeometry(planeWidth, itemHeight),
+                    new THREE.MeshBasicMaterial({ visible: false })
+                );
+                clickPlane.position.copy(addMusicText.position);
+                clickPlane.position.z = addMusicText.position.z - 0.001;
+                clickPlane.userData = { type: 'addMusicButton' };
+                musicPageGroup.add(clickPlane);
+                clickableMeshes.musicPage.push(clickPlane);
+
+            } else {
+                const endIndex = Math.min(currentMusicLibrary.length, musicPageScrollOffset + ITEMS_PER_SCREEN);
+
+                for (let i = musicPageScrollOffset; i < endIndex; i++) {
+                    const item = currentMusicLibrary[i];
+                    const displayIndex = i - musicPageScrollOffset;
+
+                    let displayName = item.name;
+                    if (displayName.length > 25) {
+                        displayName = displayName.substring(0, 22) + '...';
+                    }
+
+                    const textGeometry = new TextGeometry(displayName, {
+                        font: loadedFont, size: textSize, height: 0.01
+                    });
+                    textGeometry.computeBoundingBox();
+                    const textWidth = textGeometry.boundingBox.max.x - textGeometry.boundingBox.min.x;
+                    textGeometry.translate(-(screenWidth/2) + (screenWidth * 0.1), -textSize/2, 0);
+
+                    const isSelected = (i === selectedMusicItem);
+                    const textMaterial = new THREE.MeshBasicMaterial({
+                        color: isSelected ? 0xffffff : 0x888888
+                    });
+                    const textMesh = new THREE.Mesh(textGeometry, textMaterial);
+                    textMesh.position.y = startY - displayIndex * itemHeight;
+                    textMesh.userData = { originalColor: isSelected ? 0xffffff : 0x888888 };
+                    musicPageGroup.add(textMesh);
+
+                    const planeWidth = screenWidth * 0.9;
+                    const clickPlane = new THREE.Mesh(
+                        new THREE.PlaneGeometry(planeWidth, itemHeight),
+                        new THREE.MeshBasicMaterial({ visible: false })
+                    );
+                    clickPlane.position.copy(textMesh.position);
+                    clickPlane.position.x = 0;
+                    clickPlane.position.z = textMesh.position.z - 0.001;
+                    clickPlane.userData = { type: 'musicItem', index: i };
+                    musicPageGroup.add(clickPlane);
+                    clickableMeshes.musicPage.push(clickPlane);
+                }
+
+                const selectorSize = textSize * 0.8;
+                const selectorGeometry = new THREE.BufferGeometry();
+                const vertices = new Float32Array([
+                    0.0, selectorSize / 2, 0.0,
+                    selectorSize * 0.8, 0.0, 0.0,
+                    0.0, -selectorSize / 2, 0.0
+                ]);
+                selectorGeometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
+                const selectorMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff });
+                const selectorMesh = new THREE.Mesh(selectorGeometry, selectorMaterial);
+                selectorMesh.name = 'musicSelector';
+                const selectedDisplayIndex = selectedMusicItem - musicPageScrollOffset;
+                selectorMesh.position.set(-(screenWidth / 2) + selectorSize * 0.5, startY - selectedDisplayIndex * itemHeight, 0);
+                selectorMesh.visible = (selectedMusicItem >= musicPageScrollOffset && selectedMusicItem < endIndex);
+                musicPageGroup.add(selectorMesh);
+            }
+        }
+
+
+        function updateMenuSelection(newIndex) {
+            if (currentPage !== 'mainMenu' || !menuGroup || menuItems.length === 0) return;
+
+            newIndex = (newIndex + menuItems.length) % menuItems.length;
+            selectedMenuItem = newIndex;
+
+            const menuItemHeight = screenHeight / (menuItems.length + 1);
+            const startY = (screenHeight / 2) - menuItemHeight;
+
+            menuGroup.children.forEach(child => {
+                if (child.geometry?.type === 'TextGeometry') {
+                    const textIndex = menuItems.findIndex(item => item === child.geometry.parameters.options.text);
+                    if (textIndex !== -1) {
+                        child.material.color.setHex(textIndex === selectedMenuItem ? 0xffffff : 0x888888);
+                    }
+                }
+                if (child.name === 'menuSelector') {
+                    child.position.y = startY - selectedMenuItem * menuItemHeight;
+                }
+            });
+        }
+
+        function updateMusicSelection(delta) {
+            if (currentPage !== 'musicPage' || !musicPageGroup || currentMusicLibrary.length === 0) return;
+
+            let newIndex = selectedMusicItem + delta;
+            newIndex = (newIndex + currentMusicLibrary.length) % currentMusicLibrary.length;
+
+            selectedMusicItem = newIndex;
+
+            const selectedDisplayIndex = selectedMusicItem - musicPageScrollOffset;
+
+            if (selectedDisplayIndex < 0) {
+                musicPageScrollOffset = selectedMusicItem;
+            } else if (selectedDisplayIndex >= ITEMS_PER_SCREEN) {
+                musicPageScrollOffset = selectedMusicItem - ITEMS_PER_SCREEN + 1;
+            }
+            
+            musicPageScrollOffset = Math.max(0, Math.min(musicPageScrollOffset, currentMusicLibrary.length - ITEMS_PER_SCREEN));
+            if (currentMusicLibrary.length <= ITEMS_PER_SCREEN) musicPageScrollOffset = 0;
+
+            createMusicPageElements();
+        }
+
+        function selectMenuItem(index) {
+            if (currentPage !== 'mainMenu') return;
+
+            const item = menuItems[index];
+            console.log(`Main Menu Selected: ${item}`);
+
+            if (item === "Music") {
+                currentPage = 'musicPage';
+                menuGroup.visible = false;
+                musicPageGroup.visible = true;
+                sidebarGroup.visible = true;
+                selectedMusicItem = 0;
+                musicPageScrollOffset = 0;
+                createMusicPageElements();
+            }
+        }
+
+        function selectMusicItem(index) {
+            if (currentPage !== 'musicPage' || currentMusicLibrary.length === 0 || index < 0 || index >= currentMusicLibrary.length) return;
+
+            const item = currentMusicLibrary[index];
+            console.log(`Selected Music: ${item.name}`);
+
+            try {
+                if (currentObjectUrl) {
+                    URL.revokeObjectURL(currentObjectUrl);
+                }
+
+                currentObjectUrl = URL.createObjectURL(item.file);
+                audioElement.src = currentObjectUrl;
+                audioElement.play()
+                    .then(() => console.log(`Playing: ${item.name}`))
+                    .catch(error => {
+                        console.error("Error playing audio:", error);
+                        URL.revokeObjectURL(currentObjectUrl);
+                        currentObjectUrl = null;
+                        alert(`Error playing ${item.name}: ${error.message}`);
+                    });
+            } catch (error) {
+                console.error("Error setting up audio:", error);
+                alert(`Error setting up ${item.name}: ${error.message}`);
+                if (currentObjectUrl) {
+                    URL.revokeObjectURL(currentObjectUrl);
+                    currentObjectUrl = null;
+                }
+            }
+        }
+
+        function goBackToMainMenu() {
+            if (currentPage === 'musicPage') {
+                currentPage = 'mainMenu';
+                menuGroup.visible = true;
+                musicPageGroup.visible = false;
+                sidebarGroup.visible = false;
+            }
+        }
+
+        function addMusicFolder() {
+            document.getElementById('folder-input').click();
+        }
+
+        // --- Folder Input Handler ---
+        document.getElementById('folder-input').addEventListener('change', (event) => {
+            const files = event.target.files;
+            const newDirectories = new Map();
+
+            // Process files and extract directory structure
+            for (let i = 0; i < files.length; i++) {
+                const file = files[i];
+                const pathParts = file.webkitRelativePath.split('/');
+                
+                if (pathParts.length > 1) {
+                    const dirName = pathParts[0];
+                    
+                    if (!newDirectories.has(dirName)) {
+                        newDirectories.set(dirName, {
+                            name: dirName,
+                            path: dirName,
+                            files: []
+                        });
+                    }
+                    
+                    if (file.name.match(/\.(mp3|wav|ogg|m4a|flac|aac)$/i) && file.size > 0) {
+                        newDirectories.get(dirName).files.push({
+                            name: file.name,
+                            path: file.webkitRelativePath,
+                            file: file
+                        });
+                    }
+                }
+            }
+
+            // Update state
+            musicDirectories = Array.from(newDirectories.values()).sort((a, b) => a.name.localeCompare(b.name));
+            
+            allMusicLibrary = {};
+            musicDirectories.forEach(dir => {
+                allMusicLibrary[dir.name] = dir.files.sort((a, b) => a.name.localeCompare(b.name));
+            });
+
+            // Select first directory if none selected
+            if (selectedDirectoryIndex === -1 && musicDirectories.length > 0) {
+                selectedDirectoryIndex = 0;
+                currentMusicLibrary = allMusicLibrary[musicDirectories[0].name] || [];
+            }
+
+            console.log(`Loaded ${musicDirectories.length} directories with ${Object.values(allMusicLibrary).flat().length} songs`);
+
+            // Update UI
+            if (loadedFont) {
+                createSidebarElements();
+                createMusicPageElements();
+            }
+
+            event.target.value = null;
+        });
+
+        // --- Input Handling ---
+        const raycaster = new THREE.Raycaster();
+        const mouse = new THREE.Vector2();
+        let isDragging = false;
+        let clickStartPosition = new THREE.Vector2();
+
+        function onPointerMove(event) {
+            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+        }
+
+        function onPointerDown(event) {
+            isDragging = false;
+            clickStartPosition.set(event.clientX, event.clientY);
+        }
+
+        function onPointerUp(event) {
+            const dragDistance = clickStartPosition.distanceTo(new THREE.Vector2(event.clientX, event.clientY));
+
+            if (dragDistance < 10) {
+                if (currentView === 'screen') {
+                    raycaster.setFromCamera(mouse, camera);
+
+                    let intersects;
+                    if (currentPage === 'mainMenu' && menuGroup.visible) {
+                        intersects = raycaster.intersectObjects(clickableMeshes.mainMenu);
+                    } else if (currentPage === 'musicPage' && musicPageGroup.visible) {
+                        intersects = raycaster.intersectObjects(clickableMeshes.sidebar);
+                        if (intersects.length === 0) {
+                            intersects = raycaster.intersectObjects(clickableMeshes.musicPage);
+                        }
+                    } else {
+                        intersects = [];
+                    }
+
+                    if (intersects.length > 0) {
+                        const clickedObject = intersects[0].object;
+                        const userData = clickedObject.userData;
+
+                        if (userData?.type === 'menuItem') {
+                            selectMenuItem(userData.index);
+                        } else if (userData?.type === 'musicItem') {
+                            selectMusicItem(userData.index);
+                        } else if (userData?.type === 'addMusicButton') {
+                            addMusicFolder();
+                        } else if (userData?.type === 'directoryItem') {
+                            selectDirectory(userData.index);
+                        }
+                    }
+                }
+            }
+            isDragging = false;
+        }
+
+        // --- View Management ---
+        const views = {
+            default: { position: new THREE.Vector3(0, 0, 15), target: new THREE.Vector3(0, 0, 0), label: "Default View" },
+            front: { position: new THREE.Vector3(0, 0, 10), target: new THREE.Vector3(0, 0, 0), label: "Front View" },
+            screen: { position: new THREE.Vector3(0, screenMesh.position.y, 6), target: new THREE.Vector3(0, screenMesh.position.y, 0), label: "Screen Zoom" }
+        };
         let currentView = 'default';
         const viewIndicator = document.getElementById('view-indicator');
-
-        // --- View Transition Functions ---
-        function isFacingForward() {
-            // Create a vector pointing in the direction the camera is facing
-            const cameraDirection = new THREE.Vector3();
-            camera.getWorldDirection(cameraDirection);
-            
-            // The forward direction is along negative Z axis
-            const forward = new THREE.Vector3(0, 0, -1);
-            
-            // Check if camera is facing roughly forward (within 30 degrees)
-            return cameraDirection.dot(forward) > 0.866; // cos(30°)
-        }
-
-        function isCentered() {
-            // Get camera's look-at point
-            const cameraDirection = new THREE.Vector3();
-            camera.getWorldDirection(cameraDirection);
-            const lookAtPoint = new THREE.Vector3().copy(camera.position).add(cameraDirection);
-            
-            // Check if looking near the center of the iPod (within 1 unit)
-            return lookAtPoint.length() < 1;
-        }
+        let isTransitioning = false;
 
         function transitionToView(viewName) {
-            const view = views[viewName];
-            if (!view) return;
-            
+            const targetView = views[viewName];
+            if (!targetView || isTransitioning || currentView === viewName) return;
+
+            isTransitioning = true;
             controls.enabled = false;
             currentView = viewName;
-            viewIndicator.textContent = `Current View: ${view.label}`;
-            
+            viewIndicator.textContent = `Current View: ${targetView.label}`;
+
             const duration = 600;
             const startTime = Date.now();
             const startPosition = camera.position.clone();
             const startTarget = controls.target.clone();
-            
+
             const animateTransition = () => {
                 const elapsed = Date.now() - startTime;
                 const progress = Math.min(elapsed / duration, 1);
-                
-                // Cubic easing for smooth start and end
-                const easeProgress = progress < 0.5 ? 
-                    4 * progress * progress * progress : 
-                    1 - Math.pow(-2 * progress + 2, 3) / 2;
-                
-                // Interpolate position
-                camera.position.lerpVectors(startPosition, view.position, easeProgress);
-                
-                // Interpolate look-at target
-                controls.target.lerpVectors(startTarget, view.target, easeProgress);
-                
+                const easeProgress = 0.5 * (1 - Math.cos(Math.PI * progress));
+
+                camera.position.lerpVectors(startPosition, targetView.position, easeProgress);
+                controls.target.lerpVectors(startTarget, targetView.target, easeProgress);
+                controls.update();
+
                 if (progress < 1) {
                     requestAnimationFrame(animateTransition);
                 } else {
+                    camera.position.copy(targetView.position);
+                    controls.target.copy(targetView.target);
+                    controls.update();
                     controls.enabled = true;
+                    isTransitioning = false;
                 }
             };
-            
             animateTransition();
         }
 
         function handleSpacebar() {
             if (currentView === 'default') {
-                // First check if we're roughly facing forward and centered
-                if (isFacingForward() && isCentered()) {
-                    transitionToView('front');
-                } else {
-                    // If not centered, first go to front view
-                    transitionToView('front');
-                }
-            } 
-            else if (currentView === 'front') {
-                // From front view, zoom to screen
+                transitionToView('front');
+            } else if (currentView === 'front') {
                 transitionToView('screen');
-            }
-            else {
-                // From any other view, return to default
+            } else {
                 transitionToView('default');
             }
         }
 
+        function isMouseOverSidebar() {
+            if (!sidebarGroup.visible) return false;
+            
+            raycaster.setFromCamera(mouse, camera);
+            const intersects = raycaster.intersectObjects(clickableMeshes.sidebar);
+            return intersects.length > 0;
+        }
+
         // --- Event Listeners ---
+        window.addEventListener('pointermove', onPointerMove);
+        window.addEventListener('pointerdown', onPointerDown);
+        window.addEventListener('pointerup', onPointerUp);
+
         document.addEventListener('keydown', (event) => {
-            if (event.code === 'Space') {
+            if (currentView === 'screen' && ['ArrowUp', 'ArrowDown', 'Enter', 'Escape', 'Space'].includes(event.code)) {
                 event.preventDefault();
-                handleSpacebar();
+            } else if (event.code === 'Space') {
+                event.preventDefault();
+            }
+
+            switch (event.code) {
+                case 'Space':
+                    handleSpacebar();
+                    break;
+                case 'ArrowUp':
+                    if (currentView === 'screen' && currentPage === 'musicPage') {
+                        if (isMouseOverSidebar()) {
+                            updateSidebarSelection(selectedDirectoryIndex - 1);
+                        } else {
+                            updateMusicSelection(-1);
+                        }
+                    }
+                    break;
+                case 'ArrowDown':
+                    if (currentView === 'screen' && currentPage === 'musicPage') {
+                        if (isMouseOverSidebar()) {
+                            updateSidebarSelection(selectedDirectoryIndex + 1);
+                        } else {
+                            updateMusicSelection(1);
+                        }
+                    }
+                    break;
+                case 'Enter':
+                    if (currentView === 'screen') {
+                        if (currentPage === 'mainMenu') {
+                            selectMenuItem(selectedMenuItem);
+                        } else if (currentPage === 'musicPage') {
+                            if (isMouseOverSidebar()) {
+                                selectDirectory(selectedDirectoryIndex);
+                            } else {
+                                if (currentMusicLibrary.length === 0) {
+                                    addMusicFolder();
+                                } else {
+                                    selectMusicItem(selectedMusicItem);
+                                }
+                            }
+                        }
+                    }
+                    break;
+                case 'Escape':
+                case 'Backspace':
+                    handleBackButton();
+                    break;
+                case 'ArrowLeft':
+                    if (currentView === 'screen' && currentPage === 'musicPage') {
+                        if (!isMouseOverSidebar()) {
+                            updateSidebarSelection(selectedDirectoryIndex);
+                        }
+                    }
+                    break;
+                case 'ArrowRight':
+                    if (currentView === 'screen' && currentPage === 'musicPage') {
+                        if (isMouseOverSidebar()) {
+                            updateMusicSelection(0);
+                        }
+                    }
+                    break;
             }
         });
 
         // --- Animation Loop ---
         function animate() {
             requestAnimationFrame(animate);
-            controls.update();
+            if (controls.enabled) {
+                controls.update();
+            }
             renderer.render(scene, camera);
         }
         animate();
@@ -254,6 +917,7 @@
             camera.updateProjectionMatrix();
             renderer.setSize(window.innerWidth, window.innerHeight);
         });
+
     </script>
 </body>
 </html>
