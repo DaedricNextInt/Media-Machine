@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>iPod Music Player with Laser Visualizer</title>
+    <title>iPod Music Player with Folder Grid</title>
     <style>
         body { margin: 0; 
             overflow: hidden;
@@ -53,10 +53,7 @@
         import { FontLoader } from 'three/addons/loaders/FontLoader.js';
         import { TextGeometry } from 'three/addons/geometries/TextGeometry.js';
         import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
-        import { Line2 } from 'three/addons/lines/Line2.js';
-        import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
-        import { LineGeometry } from 'three/addons/lines/LineGeometry.js';
-        
+
         // --- Basic Setup ---
         const scene = new THREE.Scene();
         scene.background = null;
@@ -65,7 +62,9 @@
         camera.position.z = 15;
 
         const renderer = new THREE.WebGLRenderer({ 
-            alpha:true
+            
+           alpha:true
+        
         });
         renderer.setSize(window.innerWidth, window.innerHeight);
         document.body.appendChild(renderer.domElement);
@@ -111,10 +110,12 @@
         // 2. Screen
         const screenGeometry = new THREE.PlaneGeometry(screenWidth, screenHeight);
         const screenMaterial = new THREE.MeshStandardMaterial({
-            color: 0x000000,       // Base color (black)
-            emissive: 0xF1C232,    // Orange glow color
-            emissiveIntensity: 1.0 // Adjust intensity (0-2)    
-        });
+    color: 0x000000,       // Base color (black)
+    emissive: 0xF1C232,    // Orange glow color
+    emissiveIntensity: 1.0 // Adjust intensity (0-2)    
+});
+
+
         
         const screenMesh = new THREE.Mesh(screenGeometry, screenMaterial);
         screenMesh.position.z = ipodDepth / 2 + 0.01;
@@ -246,89 +247,6 @@
         particleSystem.visible = false; // Start invisible
         scene.add(particleSystem);
 
-        // --- Laser System ---
-        const lasers = [];
-        const laserGroup = new THREE.Group();
-        scene.add(laserGroup);
-
-        // Then modify your createLaser function:
-function createLaser() {
-    const points = [];
-    // Start point (at top of screen)
-    points.push(
-        (Math.random() - 0.5) * 20,  // Random X position across the top
-        15,                           // Fixed Y position at top
-        (Math.random() - 0.5) * 20    // Random Z position
-    );
-    
-    // End point (shooting downward at a slight angle)
-    const distance = 20 + Math.random() * 15; // Distance of laser
-    points.push(
-        points[0] + (Math.random() - 0.5) * 5,  // Slight X variation
-        points[1] - distance,                   // Shoot downward
-        points[2] + (Math.random() - 0.5) * 5   // Slight Z variation
-    );
-    
-    const geometry = new LineGeometry();
-    geometry.setPositions(points);
-    
-    // Random bright color
-    const hue = Math.random();
-    const color = new THREE.Color().setHSL(hue, 1.0, 0.7);
-    
-    const material = new LineMaterial({
-    color: color.getHex(),
-    linewidth: 0.1 + Math.random() * 0.2, // Thicker lines for better glow
-    transparent: true,
-    opacity: 1.0, // Start at full opacity
-    dashed: false,
-    alphaToCoverage: true,
-    worldUnits: true, // Makes linewidth consistent regardless of distance
-    blending: THREE.AdditiveBlending // This creates the glow effect
-});
-    
-    const laser = new Line2(geometry, material);
-    laser.computeLineDistances();
-    
-    laser.userData = {
-        life: 0.4,
-        speed: 0.008 + Math.random() * 0.03,
-        intensity: 0.7 + Math.random() * 0.3,
-        baseWidth: 0.1 + Math.random() * 0.4
-    };
-    
-    laserGroup.add(laser);
-    lasers.push(laser);
-    
-    return laser;
-}
-
-        function updateLasers(averageFrequency) {
-            // Remove dead lasers
-            for (let i = lasers.length - 1; i >= 0; i--) {
-                const laser = lasers[i];
-                laser.userData.life -= laser.userData.speed;
-                
-                if (laser.userData.life <= 0) {
-                    laserGroup.remove(laser);
-                    lasers.splice(i, 1);
-                } else {
-                    // Update opacity based on life
-                    laser.material.opacity = laser.userData.life * laser.userData.intensity;
-                    
-                    // Make lasers pulse with the music
-                    const pulseFactor = 1.0 + (averageFrequency / 255) * 0.5;
-                    laser.scale.set(pulseFactor, pulseFactor, pulseFactor);
-                }
-            }
-            
-            // Add new lasers based on music intensity
-            const laserSpawnChance = averageFrequency / 255 * 0.3;
-            if (Math.random() < laserSpawnChance) {
-                createLaser();
-            }
-        }
-
         // --- Audio Visualizer Setup ---
         const audioContext = new (window.AudioContext || window.webkitAudioContext)();
         const analyser = audioContext.createAnalyser();
@@ -340,44 +258,17 @@ function createLaser() {
         source.connect(analyser);
         analyser.connect(audioContext.destination);
 
-        // --- Audio Event Listeners ---
+        // Audio event listeners
         audioElement.addEventListener('play', () => {
-            if (audioContext.state === 'suspended') {
-                audioContext.resume();
-            }
             particleSystem.visible = true;
-            laserGroup.visible = true;
         });
-
+        
         audioElement.addEventListener('pause', () => {
             particleSystem.visible = false;
-            laserGroup.visible = false;
         });
-
+        
         audioElement.addEventListener('ended', () => {
             particleSystem.visible = false;
-            laserGroup.visible = false;
-
-            if (currentPage === 'musicPage' && currentMusicLibrary && currentMusicLibrary.length > 0) {
-                const nextIndex = (selectedMusicItem + 1) % currentMusicLibrary.length;
-                selectedMusicItem = nextIndex;
-                
-                const selectedDisplayIndex = selectedMusicItem - musicPageScrollOffset;
-                if (selectedDisplayIndex < 0) {
-                    musicPageScrollOffset = selectedMusicItem;
-                } else if (selectedDisplayIndex >= ITEMS_PER_SCREEN) {
-                    musicPageScrollOffset = selectedMusicItem - ITEMS_PER_SCREEN + 1;
-                }
-                
-                musicPageScrollOffset = Math.max(0, Math.min(musicPageScrollOffset, currentMusicLibrary.length - ITEMS_PER_SCREEN));
-                if (currentMusicLibrary.length <= ITEMS_PER_SCREEN) musicPageScrollOffset = 0;
-                
-                selectMusicItem(nextIndex);
-                
-                if (loadedFont) {
-                    createMusicPageElements();
-                }
-            }
         });
 
         // --- Font Loading ---
@@ -388,6 +279,7 @@ function createLaser() {
             createMusicPageElements();
             createSidebarElements();
         });
+
 
         // --- Create Sidebar Elements ---
         function createSidebarElements() {
@@ -1064,70 +956,100 @@ function updateParticles() {
     particles.attributes.position.needsUpdate = true;
     particles.attributes.size.needsUpdate = true;
 }
-        // --- Render Loop ---
-        function animate() {
-            requestAnimationFrame(animate);
-            controls.update();
-            
-            // Update particles only when music is playing
-            if (particleSystem.visible) {
-                updateParticles();
-            }
-            
-            // Update audio analyzer and visual effects
-            analyser.getByteFrequencyData(dataArray);
-            let average = 0;
-            for (let i = 0; i < bufferLength; i++) {
-                average += dataArray[i];
-            }
-            average /= bufferLength;
-            
-            // Update lasers based on audio
-            if (laserGroup.visible) {
-                updateLasers(average);
-            }
-            
-            // Visualizer effects on iPod elements
-            const minScale = 0.8;
-            const maxScale = 1.3;
-            const scaleRange = maxScale - minScale;
-            const scaleFactor = minScale + (average / 255) * scaleRange;
 
-            if (centerButtonMesh) {
-                centerButtonMesh.scale.set(scaleFactor, scaleFactor, scaleFactor);
-            }
-            if (wheelRingMesh) {
-                wheelRingMesh.scale.set(scaleFactor, scaleFactor, scaleFactor);
-            }
-            
-            // Screen glow effect
-            const minIntensity = 0.9;
-            const maxIntensity = 2.0;
-            const intensityRange = maxIntensity - minIntensity;
-            const normalizedAverage = average / 255;
-            const glowIntensity = minIntensity + normalizedAverage * intensityRange * 2;
-            
-            screenMaterial.emissiveIntensity = Math.max(minIntensity, glowIntensity);
-            screenGlowLight.intensity = Math.max(0.5, glowIntensity * 0.8);
-            
-            renderer.render(scene, camera);
-        }
+// --- Render Loop ---
+function animate() {
+    requestAnimationFrame(animate);
+    controls.update();
+    
+    // Update particles only when music is playing
+    if (particleSystem.visible) {
+        updateParticles();
+    }
+    
+    renderer.render(scene, camera);
+}
 
-        // Start animation loop
-        animate();
+// Modified animate function
+const originalAnimate = animate;
+animate = function() {
+    // Idle check
+    const currentTime = Date.now();
+    if (currentTime - lastInteractionTime > idleSpinDelay && !isIdleSpinning) {
+        isIdleSpinning = true;
+    }
+    
+    // Apply rotation if idle
+    if (isIdleSpinning) {
+        ipodGroup.rotation.y += idleSpinSpeed;
+    }
+    
+    originalAnimate();
+};
 
-        // Ensure AudioContext is resumed on user interaction
-        window.addEventListener('resize', () => {
-            camera.aspect = window.innerWidth / window.innerHeight;
-            camera.updateProjectionMatrix();
-            renderer.setSize(window.innerWidth, window.innerHeight);
-        }, false);
+// AUDIO VISUALIZER ANIMATIONS
+function animates() {
+    requestAnimationFrame(animates);
+    controls.update();
+    // --- Audio Visualizer Update ---
+    analyser.getByteFrequencyData(dataArray);
+    let average = 0;
+    for (let i = 0; i < bufferLength; i++) {
+        average += dataArray[i];
+    }
+    average /= bufferLength;
+    // Map the average frequency to a scale factor
+    const minScale = 0.8;
+    const maxScale = 1.3; // Adjust for the pulse intensity
+    const scaleRange = maxScale - minScale;
+    const scaleFactor = minScale + (average / 255) * scaleRange;
 
-        document.addEventListener('click', () => {
-            if (audioContext.state === 'suspended') {
-                audioContext.resume();
-            } 
-        });
+    // Apply the scale to the center button
+    const centerButton = clickWheelGroup.getObjectByName('centerButtonMesh');
+    if (centerButton) {
+        centerButton.scale.set(scaleFactor, scaleFactor, scaleFactor);
+    }
+
+    // Apply the scale to the outer ring
+    const outerRing = clickWheelGroup.getObjectByName('wheelRingMesh');
+    if (outerRing) {
+        outerRing.scale.set(scaleFactor, scaleFactor, scaleFactor);
+    }
+    // Map the average frequency to the emissive intensity
+    const minIntensity = 0.9;
+    const maxIntensity = 2.0;
+    const intensityRange = maxIntensity - minIntensity;
+    const normalizedAverage = average / 255;
+    // Normalize to 0-1
+    const glowIntensity = minIntensity + normalizedAverage * intensityRange * 2;
+    // Adjust multiplier for sensitivity
+
+    screenMaterial.emissiveIntensity = Math.max(minIntensity, glowIntensity);
+    screenGlowLight.intensity = Math.max(0.5, glowIntensity * 0.8); // Adjust light intensity as well
+    renderer.render(scene, camera);
+}
+
+// Inside your `init` function, name your meshes
+centerButtonMesh.name = 'centerButtonMesh';
+wheelRingMesh.name = 'wheelRingMesh';
+
+// Start animation loop
+animate();
+animates();
+
+// Ensure AudioContext is resumed on user interaction
+window.addEventListener('resize', () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+}, false);
+
+document.addEventListener('click', () => {
+    if (audioContext.state === 'suspended') {
+        audioContext.resume();
+    } 
+});
+
     </script>
 </body>
 </html>
