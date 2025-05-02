@@ -1,0 +1,1055 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>iPod Music Player with Folder Grid</title>
+    <style>
+        body { margin: 0; 
+            overflow: hidden;
+            background-color: transparent !important; 
+            /* -webkit-app-region: drag; */
+        
+        }
+        canvas { display: block; }
+        #view-indicator {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            color: white;
+            background-color: transparent !important; 
+            padding: 10px;
+            font-family: Arial, sans-serif;
+            border-radius: 5px;
+            z-index: 10;
+        }
+        #folder-input {
+            display: none;
+        }
+        #audio-player {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            width: 80%;
+            z-index: 10;
+            opacity: 0.5;
+        }
+    </style>
+</head>
+<body>
+    <div id="view-indicator">Current View: Default</div>
+    <input type="file" id="folder-input" webkitdirectory directory multiple />
+    <audio id="audio-player" controls></audio>
+
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.163.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.163.0/examples/jsm/"
+            }
+        }
+    </script>
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { FontLoader } from 'three/addons/loaders/FontLoader.js';
+        import { TextGeometry } from 'three/addons/geometries/TextGeometry.js';
+        import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+
+        // --- Basic Setup ---
+        const scene = new THREE.Scene();
+        scene.background = null;
+
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.z = 15;
+
+        const renderer = new THREE.WebGLRenderer({ 
+            
+           alpha:true
+        
+        });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        renderer.setClearColor(0x000000, 0); // Set clear color to transparent black
+
+        // --- Lighting ---
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+        scene.add(ambientLight);
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        directionalLight.position.set(5, 10, 7.5);
+        scene.add(directionalLight);
+
+        // --- Controls ---
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.05;
+        controls.enablePan = false;
+
+        // --- IPOD MODEL CODE ---
+        const ipodWidth = 5.5;
+        const ipodHeight = 10;
+        const ipodDepth = 1;
+        const screenWidth = 4;
+        const screenHeight = 3;
+        const wheelOuterRadius = 1.5;
+        const wheelInnerRadius = 0.8;
+        const buttonRadius = wheelInnerRadius * 0.8;
+
+        const ipodGroup = new THREE.Group();
+        scene.add(ipodGroup);
+
+        // 1. iPod Body
+        const bodyGeometry = new THREE.BoxGeometry(ipodWidth, ipodHeight, ipodDepth);
+        const frontMaterial = new THREE.MeshStandardMaterial({
+             color: 0xffffff, roughness: 0.6, metalness: 0.9 });
+        const backMaterial = new THREE.MeshStandardMaterial({ color: 0xcccccc, metalness: 0.9, roughness: 0.6 });
+        const edgeMaterial = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.6, metalness: 0.9 });
+        const bodyMaterials = [edgeMaterial, edgeMaterial, edgeMaterial, edgeMaterial, frontMaterial, backMaterial];
+        const ipodBody = new THREE.Mesh(bodyGeometry, bodyMaterials);
+        ipodGroup.add(ipodBody);
+
+        // 2. Screen
+        const screenGeometry = new THREE.PlaneGeometry(screenWidth, screenHeight);
+        const screenMaterial = new THREE.MeshStandardMaterial({
+    color: 0x000000,       // Base color (black)
+    emissive: 0xF1C232,    // Orange glow color
+    emissiveIntensity: 1.0 // Adjust intensity (0-2)    
+});
+
+
+        
+        const screenMesh = new THREE.Mesh(screenGeometry, screenMaterial);
+        screenMesh.position.z = ipodDepth / 2 + 0.01;
+        screenMesh.position.y = (ipodHeight / 2) * 0.3;
+        ipodGroup.add(screenMesh);
+
+        /*GLOWING EFFECT*/
+        const screenGlowLight = new THREE.PointLight(0xff5500, 1, 10); // Orange glow
+        screenGlowLight.position.copy(screenMesh.position);
+        screenGlowLight.position.z += 0.2; // Slightly in front of the screen
+        ipodGroup.add(screenGlowLight);
+
+        // 3. Click Wheel
+        const clickWheelGroup = new THREE.Group();
+        clickWheelGroup.position.y = -(ipodHeight / 2) * 0.35;
+        clickWheelGroup.position.z = ipodDepth / 2 + 0.01;
+        ipodGroup.add(clickWheelGroup);
+
+        // a) Outer Ring
+        const wheelRingGeometry = new THREE.RingGeometry(wheelInnerRadius, wheelOuterRadius, 32);
+        const wheelRingMaterial = new THREE.MeshStandardMaterial({ color: 0xe0e0e0, roughness: 0.7, side: THREE.DoubleSide });
+        const wheelRingMesh = new THREE.Mesh(wheelRingGeometry, wheelRingMaterial);
+        clickWheelGroup.add(wheelRingMesh);
+
+        // b) Center Button
+        const centerButtonGeometry = new THREE.CircleGeometry(buttonRadius, 32);
+        const centerButtonMaterial = new THREE.MeshStandardMaterial({ color: 0xf0f0f0, roughness: 0.7 });
+        const centerButtonMesh = new THREE.Mesh(centerButtonGeometry, centerButtonMaterial);
+        clickWheelGroup.add(centerButtonMesh);
+
+        // --- Menu & Music System ---
+        let selectedMenuItem = 0;
+        const menuItems = ["Music", "Photos", "Videos", "Podcasts", "Extras", "Settings", "Shuffle Songs"];
+        const menuGroup = new THREE.Group();
+        menuGroup.position.z = ipodDepth / 2 + 0.02;
+        menuGroup.position.y = screenMesh.position.y;
+        menuGroup.visible = true;
+        ipodGroup.add(menuGroup);
+
+        // Music library state
+        let allMusicLibrary = {};
+        let currentMusicLibrary = [];
+        let selectedMusicItem = 0;
+        let musicPageScrollOffset = 0;
+        const ITEMS_PER_SCREEN = 5;
+
+        let currentPage = 'mainMenu';
+        let loadedFont = null;
+
+        const musicPageGroup = new THREE.Group();
+        musicPageGroup.position.z = ipodDepth / 2 + 0.02;
+        musicPageGroup.position.y = screenMesh.position.y;
+        musicPageGroup.visible = false;
+        ipodGroup.add(musicPageGroup);
+
+        // --- Music Directory Sidebar ---
+        const sidebarGroup = new THREE.Group();
+        sidebarGroup.position.z = ipodDepth / 2 + 0.03;
+        sidebarGroup.position.x = screenWidth / 2 + 2 ;
+        sidebarGroup.position.y = screenMesh.position.y;
+        sidebarGroup.visible = true;
+        ipodGroup.add(sidebarGroup);
+
+        let musicDirectories = [];
+        let selectedDirectoryIndex = -1;
+
+        // Store meshes for raycasting
+        const clickableMeshes = {
+            mainMenu: [],
+            musicPage: [],
+            sidebar: []
+        };
+
+        // Audio Player Element
+        const audioElement = document.getElementById('audio-player');
+        let currentObjectUrl = null;
+
+        // --- Particle System ---
+        const particleCount = 1000;
+        const particles = new THREE.BufferGeometry();
+        const particlePositions = new Float32Array(particleCount * 3);
+        const particleSizes = new Float32Array(particleCount);
+        const particleVelocities = new Float32Array(particleCount * 3);
+        const particleColors = new Float32Array(particleCount * 3);
+        
+        // Initialize particles
+        const colorPalette = [
+            [0.9, 0.2, 0.2], // red
+            [0.2, 0.9, 0.2], // green
+            [0.2, 0.2, 0.9], // blue
+            [0.9, 0.9, 0.2], // yellow
+            [0.9, 0.2, 0.9]  // purple
+        ];
+        
+        for (let i = 0; i < particleCount; i++) {
+            // Random positions above the view
+            particlePositions[i * 3] = (Math.random() - 0.5) * 20;
+            particlePositions[i * 3 + 1] = Math.random() * 10 + 10;
+            particlePositions[i * 3 + 2] = (Math.random() - 0.5) * 20;
+            
+            // Random sizes
+            particleSizes[i] = Math.random() * 0.2 + 0.05;
+            
+            // Random velocities (mostly downward)
+            particleVelocities[i * 3] = (Math.random() - 0.5) * 0.1;
+            particleVelocities[i * 3 + 1] = -Math.random() * 0.5 - 0.1;
+            particleVelocities[i * 3 + 2] = (Math.random() - 0.5) * 0.1;
+            
+            // Random colors from palette
+            const color = colorPalette[Math.floor(Math.random() * colorPalette.length)];
+            particleColors[i * 3] = color[0];
+            particleColors[i * 3 + 1] = color[1];
+            particleColors[i * 3 + 2] = color[2];
+        }
+        
+        particles.setAttribute('position', new THREE.BufferAttribute(particlePositions, 3));
+        particles.setAttribute('color', new THREE.BufferAttribute(particleColors, 3));
+        particles.setAttribute('size', new THREE.BufferAttribute(particleSizes, 1));
+        
+        const particleMaterial = new THREE.PointsMaterial({
+            size: 0.1,
+            vertexColors: true,
+            transparent: true,
+            opacity: 0.8,
+            blending: THREE.AdditiveBlending
+        });
+        
+        const particleSystem = new THREE.Points(particles, particleMaterial);
+        particleSystem.visible = false; // Start invisible
+        scene.add(particleSystem);
+
+        // --- Audio Visualizer Setup ---
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        const analyser = audioContext.createAnalyser();
+        analyser.fftSize = 256;
+        const bufferLength = analyser.frequencyBinCount;
+        const dataArray = new Uint8Array(bufferLength);
+
+        const source = audioContext.createMediaElementSource(audioElement);
+        source.connect(analyser);
+        analyser.connect(audioContext.destination);
+
+        // Audio event listeners
+        audioElement.addEventListener('play', () => {
+            particleSystem.visible = true;
+        });
+        
+        audioElement.addEventListener('pause', () => {
+            particleSystem.visible = false;
+        });
+        
+        audioElement.addEventListener('ended', () => {
+            particleSystem.visible = false;
+        });
+
+        // --- Font Loading ---
+        const fontLoader = new FontLoader();
+        fontLoader.load('https://threejs.org/examples/fonts/helvetiker_regular.typeface.json', (font) => {
+            loadedFont = font;
+            createMenuItems();
+            createMusicPageElements();
+            createSidebarElements();
+        });
+
+
+        // --- Create Sidebar Elements ---
+        function createSidebarElements() {
+            if (!loadedFont) return;
+
+            const sidebarWidth = 2.5;
+            const sidebarHeight = screenHeight * 0.9;
+            const textSize = 0.2;
+
+            /* GRID LAYOUT */
+            const padding = 0.5;
+            const itemHeight = 0.8;
+            const itemWidth = 1.2;
+            const spacingX = 0.3;
+            const spacingY = 0.3;
+            const columns = 3;
+
+            const startX = -sidebarWidth / 2 + padding + itemWidth / 2;
+            const startY = screenHeight / 2 - padding - itemHeight / 2;
+
+            // Clear previous directory items
+            const childrenToRemove = [];
+            sidebarGroup.children.forEach(child => {
+                if (child.userData?.type?.startsWith('directory') || child.userData?.type === 'directoryItem') {
+                    childrenToRemove.push(child);
+                }
+            });
+            childrenToRemove.forEach(child => {
+                sidebarGroup.remove(child);
+                if (clickableMeshes.sidebar.includes(child)) {
+                    clickableMeshes.sidebar.splice(clickableMeshes.sidebar.indexOf(child), 1);
+                }
+            });
+
+            // Add button at the top
+            const addButtonY = screenHeight / 2 - padding - itemHeight * 0.6; // Position at the top
+            const addButtonX = -sidebarWidth / 2 + padding + itemWidth / 2; // Centered at the top
+
+            const addButtonGeometry = new RoundedBoxGeometry(sidebarWidth - 2 * padding, itemHeight * 0.6, 0.01, 0.1);
+            const addButtonMaterial = new THREE.MeshBasicMaterial({
+                color: 0x333333,
+                opacity: 0.1,
+                transparent: true
+            });
+            const addButtonMesh = new THREE.Mesh(addButtonGeometry, addButtonMaterial);
+            addButtonMesh.position.set(0, addButtonY, 0.01); // Center the add button
+            addButtonMesh.userData = { type: 'addButtonBg' };
+            sidebarGroup.add(addButtonMesh);
+
+            const addTextGeometry = new TextGeometry("+ Add Folder", {
+                font: loadedFont,
+                size: textSize,
+                height: 0.01
+            });
+            addTextGeometry.computeBoundingBox();
+            addTextGeometry.translate(-(addTextGeometry.boundingBox.max.x - addTextGeometry.boundingBox.min.x)/2, -textSize/2, 0.01);
+            const addTextMesh = new THREE.Mesh(addTextGeometry, new THREE.MeshBasicMaterial({
+                color: 0xffffff,
+                transparent: true,
+                opacity: 0.9
+            }));
+            addTextMesh.position.copy(addButtonMesh.position);
+            addTextMesh.position.z += 0.01;
+            addTextMesh.userData = { type: 'addMusicButtonText' };
+            sidebarGroup.add(addTextMesh);
+
+            const addClickPlane = new THREE.Mesh(
+                new THREE.PlaneGeometry(sidebarWidth - 2 * padding, itemHeight * 0.6),
+                new THREE.MeshBasicMaterial({ visible: false })
+            );
+            addClickPlane.position.copy(addButtonMesh.position);
+            addClickPlane.position.z += 0.02;
+            addClickPlane.userData = { type: 'addMusicButton' };
+            sidebarGroup.add(addClickPlane);
+            clickableMeshes.sidebar.push(addClickPlane);
+
+
+            musicDirectories.forEach((dir, index) => {
+                const row = Math.floor(index / columns);
+                const col = index % columns;
+
+                const xPos = startX + col * (itemWidth + spacingX);
+                const yPos = startY - (row + 1) * (itemHeight + spacingY) - 0.2; // Shift down to accommodate add button
+
+                // Folder background
+                const folderBgGeometry = new RoundedBoxGeometry(itemWidth, itemHeight, 0.01, 0.1);
+                const folderBgMaterial = new THREE.MeshBasicMaterial({
+                    color: index === selectedDirectoryIndex ? 0x4a90e2 : 0x333333,
+                    opacity: 0.8,
+                    transparent: true
+                });
+                const folderBg = new THREE.Mesh(folderBgGeometry, folderBgMaterial);
+                folderBg.position.set(xPos, yPos, 0);
+                folderBg.userData = { type: 'directoryBg', index: index };
+                sidebarGroup.add(folderBg);
+
+                // Folder icon
+                const iconGeometry = new THREE.BoxGeometry(itemWidth * 0.6, itemHeight * 0.4, 0.01);
+                const iconMaterial = new THREE.MeshBasicMaterial({
+                    color: index === selectedDirectoryIndex ? 0xffffff : 0x888888,
+                    transparent: true,
+                    opacity: 0.9
+                });
+                const iconMesh = new THREE.Mesh(iconGeometry, iconMaterial);
+                iconMesh.position.set(xPos, yPos + itemHeight * 0.1, 0.01);
+                iconMesh.userData = { type: 'directoryIcon', index: index };
+                sidebarGroup.add(iconMesh);
+
+                // Directory name
+                let displayName = dir.name;
+                if (displayName.length > 8) displayName = displayName.substring(0, 6) + '...';
+
+                const nameGeometry = new TextGeometry(displayName, {
+                    font: loadedFont,
+                    size: textSize,
+                    height: 0.01
+                });
+                nameGeometry.computeBoundingBox();
+                nameGeometry.translate(-(nameGeometry.boundingBox.max.x - nameGeometry.boundingBox.min.x)/2, -textSize/2, 0.01);
+                const nameMesh = new THREE.Mesh(nameGeometry, new THREE.MeshBasicMaterial({
+                    color: 0xffffff,
+                    transparent: true,
+                    opacity: 0.9
+                }));
+                nameMesh.position.set(xPos, yPos - itemHeight * 0.3, 0.02);
+                nameMesh.userData = { type: 'directoryText', index: index };
+                sidebarGroup.add(nameMesh);
+
+                // Clickable area
+                const clickPlane = new THREE.Mesh(
+                    new THREE.PlaneGeometry(itemWidth, itemHeight),
+                    new THREE.MeshBasicMaterial({ visible: false })
+                );
+                clickPlane.position.set(xPos, yPos, 0.03);
+                clickPlane.userData = {
+                    type: 'directoryItem',
+                    index: index,
+                    dirName: dir.name
+                };
+                sidebarGroup.add(clickPlane);
+                clickableMeshes.sidebar.push(clickPlane);
+            });
+        }
+
+        function updateDirectoryHighlights() {
+            sidebarGroup.children.forEach(child => {
+                if (child.userData?.type === 'directoryBg') {
+                    child.material.color.setHex(
+                        child.userData.index === selectedDirectoryIndex ? 0x4a90e2 : 0x333333
+                    );
+                }
+                if (child.userData?.type === 'directoryIcon') {
+                    child.material.color.setHex(
+                        child.userData.index === selectedDirectoryIndex ? 0xffffff : 0x888888
+                    );
+                }
+            });
+        }
+
+        function selectDirectory(index) {
+            if (index < 0 || index >= musicDirectories.length) return;
+
+            selectedDirectoryIndex = index;
+            const dirName = musicDirectories[index].name;
+            currentMusicLibrary = allMusicLibrary[dirName] || [];
+
+            selectedMusicItem = 0;
+            musicPageScrollOffset = 0;
+
+            updateDirectoryHighlights();
+            createMusicPageElements();
+
+            console.log(`Selected directory: ${dirName} with ${currentMusicLibrary.length} songs`);
+        }
+
+        function createMenuItems() {
+            if (!loadedFont) return;
+
+            while (menuGroup.children.length > 0) {
+                menuGroup.remove(menuGroup.children[0]);
+            }
+            clickableMeshes.mainMenu = [];
+
+            const menuItemHeight = screenHeight / (menuItems.length + 1);
+            const textSize = menuItemHeight * 0.5;
+            const startY = (screenHeight / 2) - menuItemHeight;
+
+            menuItems.forEach((item, index) => {
+                const textGeometry = new TextGeometry(item, {
+                    font: loadedFont,
+                    size: textSize,
+                    height: 0.01
+                });
+                textGeometry.computeBoundingBox();
+                const textWidth = textGeometry.boundingBox.max.x - textGeometry.boundingBox.min.x;
+                textGeometry.translate(-textWidth / 2, -textSize/2, 0);
+
+                const textMaterial = new THREE.MeshBasicMaterial({
+                    color: index === selectedMenuItem ? 0xffffff : 0x888888
+                });
+                const textMesh = new THREE.Mesh(textGeometry, textMaterial);
+                textMesh.position.y = startY - index * menuItemHeight;
+                textMesh.position.x = 0;
+                menuGroup.add(textMesh);
+
+                const planeWidth = screenWidth * 0.9;
+                const clickPlane = new THREE.Mesh(
+                    new THREE.PlaneGeometry(planeWidth, menuItemHeight),
+                    new THREE.MeshBasicMaterial({ visible: false })
+                );
+                clickPlane.position.copy(textMesh.position);
+                clickPlane.position.z = textMesh.position.z - 0.001;
+                clickPlane.userData = { type: 'menuItem', index: index };
+                menuGroup.add(clickPlane);
+                clickableMeshes.mainMenu.push(clickPlane);
+            });
+
+            const selectorSize = textSize * 0.8;
+            const selectorGeometry = new THREE.BufferGeometry();
+            const vertices = new Float32Array([
+                0.0, selectorSize / 2, 0.0,
+                selectorSize * 0.8, 0.0, 0.0,
+                0.0, -selectorSize / 2, 0.0
+            ]);
+            selectorGeometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
+            const selectorMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff });
+            const selectorMesh = new THREE.Mesh(selectorGeometry, selectorMaterial);
+            selectorMesh.name = 'menuSelector';
+            selectorMesh.position.set(-(screenWidth / 2) + selectorSize, startY - selectedMenuItem * menuItemHeight, 0);
+            menuGroup.add(selectorMesh);
+        }
+
+        function createMusicPageElements() {
+            if (!loadedFont) return;
+
+            while (musicPageGroup.children.length > 0) {
+                musicPageGroup.remove(musicPageGroup.children[0]);
+            }
+            clickableMeshes.musicPage = [];
+
+            const itemHeight = screenHeight / (ITEMS_PER_SCREEN + 1);
+            const textSize = itemHeight * 0.5;
+            const startY = (screenHeight / 2) - itemHeight;
+            const maxTextWidth = screenWidth * 0.8;
+
+            if (currentMusicLibrary.length === 0) {
+                const noMusicTextGeometry = new TextGeometry(
+                    selectedDirectoryIndex >= 0 ? "No music in this folder" : "No music found",
+                    { font: loadedFont, size: textSize, height: 0.01 }
+                );
+                noMusicTextGeometry.computeBoundingBox();
+                noMusicTextGeometry.translate(-(noMusicTextGeometry.boundingBox.max.x - noMusicTextGeometry.boundingBox.min.x)/2, -textSize/2, 0);
+                const noMusicText = new THREE.Mesh(noMusicTextGeometry, new THREE.MeshBasicMaterial({ color: 0xaaaaaa }));
+                noMusicText.position.y = startY;
+                musicPageGroup.add(noMusicText);
+
+                const addTextGeometry = new TextGeometry("Add Music Folder", {
+                    font: loadedFont, size: textSize, height: 0.01
+                });
+                addTextGeometry.computeBoundingBox();
+                addTextGeometry.translate(-(addTextGeometry.boundingBox.max.x - addTextGeometry.boundingBox.min.x)/2, -textSize/2, 0);
+                const addMusicText = new THREE.Mesh(addTextGeometry, new THREE.MeshBasicMaterial({ color: 0xffffff }));
+                addMusicText.position.y = startY - itemHeight;
+                musicPageGroup.add(addMusicText);
+
+                const planeWidth = screenWidth * 0.9;
+                const clickPlane = new THREE.Mesh(
+                    new THREE.PlaneGeometry(planeWidth, itemHeight),
+                    new THREE.MeshBasicMaterial({ visible: false })
+                );
+                clickPlane.position.copy(addMusicText.position);
+                clickPlane.position.z = addMusicText.position.z - 0.001;
+                clickPlane.userData = { type: 'addMusicButton' };
+                musicPageGroup.add(clickPlane);
+                clickableMeshes.musicPage.push(clickPlane);
+
+            } else {
+                const endIndex = Math.min(currentMusicLibrary.length, musicPageScrollOffset + ITEMS_PER_SCREEN);
+
+                for (let i = musicPageScrollOffset; i < endIndex; i++) {
+                    const item = currentMusicLibrary[i];
+                    const displayIndex = i - musicPageScrollOffset;
+
+                    let displayName = item.name;
+                    if (displayName.length > 25) {
+                        displayName = displayName.substring(0, 22) + '...';
+                    }
+
+                    const textGeometry = new TextGeometry(displayName, {
+                        font: loadedFont, size: textSize, height: 0.01
+                    });
+                    textGeometry.computeBoundingBox();
+                    const textWidth = textGeometry.boundingBox.max.x - textGeometry.boundingBox.min.x;
+                    textGeometry.translate(-(screenWidth/2) + (screenWidth * 0.1), -textSize/2, 0);
+
+                    const isSelected = (i === selectedMusicItem);
+                    const textMaterial = new THREE.MeshBasicMaterial({
+                        color: isSelected ? 0xffffff : 0x888888
+                    });
+                    const textMesh = new THREE.Mesh(textGeometry, textMaterial);
+                    textMesh.position.y = startY - displayIndex * itemHeight;
+                    textMesh.userData = { originalColor: isSelected ? 0xffffff : 0x888888 };
+                    musicPageGroup.add(textMesh);
+
+                    const planeWidth = screenWidth * 0.9;
+                    const clickPlane = new THREE.Mesh(
+                        new THREE.PlaneGeometry(planeWidth, itemHeight),
+                        new THREE.MeshBasicMaterial({ visible: false })
+                    );
+                    clickPlane.position.copy(textMesh.position);
+                    clickPlane.position.x = 0;
+                    clickPlane.position.z = textMesh.position.z - 0.001;
+                    clickPlane.userData = { type: 'musicItem', index: i };
+                    musicPageGroup.add(clickPlane);
+                    clickableMeshes.musicPage.push(clickPlane);
+                }
+
+                const selectorSize = textSize * 0.8;
+                const selectorGeometry = new THREE.BufferGeometry();
+                const vertices = new Float32Array([
+                    0.0, selectorSize / 2, 0.0,
+                    selectorSize * 0.8, 0.0, 0.0,
+                    0.0, -selectorSize / 2, 0.0
+                ]);
+                selectorGeometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
+                const selectorMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff });
+                const selectorMesh = new THREE.Mesh(selectorGeometry, selectorMaterial);
+                selectorMesh.name = 'musicSelector';
+                const selectedDisplayIndex = selectedMusicItem - musicPageScrollOffset;
+                selectorMesh.position.set(-(screenWidth / 2) + selectorSize * 0.5, startY - selectedDisplayIndex * itemHeight, 0);
+                selectorMesh.visible = (selectedMusicItem >= musicPageScrollOffset && selectedMusicItem < endIndex);
+                musicPageGroup.add(selectorMesh);
+            }
+        }
+
+        function updateMenuSelection(newIndex) {
+            if (currentPage !== 'mainMenu' || !menuGroup || menuItems.length === 0) return;
+
+            newIndex = (newIndex + menuItems.length) % menuItems.length;
+            selectedMenuItem = newIndex;
+
+            const menuItemHeight = screenHeight / (menuItems.length + 1);
+            const startY = (screenHeight / 2) - menuItemHeight;
+
+            menuGroup.children.forEach(child => {
+                if (child.geometry?.type === 'TextGeometry') {
+                    const textIndex = menuItems.findIndex(item => item === child.geometry.parameters.options.text);
+                    if (textIndex !== -1) {
+                        child.material.color.setHex(textIndex === selectedMenuItem ? 0xffffff : 0x888888);
+                    }
+                }
+                if (child.name === 'menuSelector') {
+                    child.position.y = startY - selectedMenuItem * menuItemHeight;
+                }
+            });
+        }
+
+        function updateMusicSelection(delta) {
+            if (currentPage !== 'musicPage' || !musicPageGroup || currentMusicLibrary.length === 0) return;
+
+            let newIndex = selectedMusicItem + delta;
+            newIndex = (newIndex + currentMusicLibrary.length) % currentMusicLibrary.length;
+
+            selectedMusicItem = newIndex;
+
+            const selectedDisplayIndex = selectedMusicItem - musicPageScrollOffset;
+
+            if (selectedDisplayIndex < 0) {
+                musicPageScrollOffset = selectedMusicItem;
+            } else if (selectedDisplayIndex >= ITEMS_PER_SCREEN) {
+                musicPageScrollOffset = selectedMusicItem - ITEMS_PER_SCREEN + 1;
+            }
+
+            musicPageScrollOffset = Math.max(0, Math.min(musicPageScrollOffset, currentMusicLibrary.length - ITEMS_PER_SCREEN));
+            if (currentMusicLibrary.length <= ITEMS_PER_SCREEN) musicPageScrollOffset = 0;
+
+            createMusicPageElements();
+        }
+
+        function selectMenuItem(index) {
+            if (currentPage !== 'mainMenu') return;
+
+            const item = menuItems[index];
+            console.log(`Main Menu Selected: ${item}`);
+
+            if (item === "Music") {
+                currentPage = 'musicPage';
+                menuGroup.visible = false;
+                musicPageGroup.visible = true;
+                sidebarGroup.visible = true;
+                selectedMusicItem = 0;
+                musicPageScrollOffset = 0;
+                createMusicPageElements();
+            }
+        }
+
+        function selectMusicItem(index) {
+            if (currentPage !== 'musicPage' || currentMusicLibrary.length === 0 || index < 0 || index >= currentMusicLibrary.length) return;
+
+            const item = currentMusicLibrary[index];
+            console.log(`Selected Music: ${item.name}`);
+
+            try {
+                if (currentObjectUrl) {
+                    URL.revokeObjectURL(currentObjectUrl);
+                }
+
+                currentObjectUrl = URL.createObjectURL(item.file);
+                audioElement.src = currentObjectUrl;
+                audioElement.play()
+                    .then(() => console.log(`Playing: ${item.name}`))
+                    .catch(error => {
+                        console.error("Error playing audio:", error);
+                        URL.revokeObjectURL(currentObjectUrl);
+                        currentObjectUrl = null;
+                        alert(`Error playing ${item.name}: ${error.message}`);
+                    });
+            } catch (error) {
+                console.error("Error setting up audio:", error);
+                alert(`Error setting up ${item.name}: ${error.message}`);
+                if (currentObjectUrl) {
+                    URL.revokeObjectURL(currentObjectUrl);
+                    currentObjectUrl = null;
+                }
+            }
+        }
+
+        function goBackToMainMenu() {
+            if (currentPage === 'musicPage') {
+                currentPage = 'mainMenu';
+                menuGroup.visible = true;
+                musicPageGroup.visible = false;
+                sidebarGroup.visible = false;
+            }
+        }
+
+        function addMusicFolder() {
+            document.getElementById('folder-input').click();
+        }
+
+        // --- Folder Input Handler ---
+        document.getElementById('folder-input').addEventListener('change', (event) => {
+            const files = event.target.files;
+            const newDirectories = new Map();
+
+            // Process files and extract directory structure
+            for (let i = 0; i < files.length; i++) {
+                const file = files[i];
+                const pathParts = file.webkitRelativePath.split('/');
+
+                if (pathParts.length > 1) {
+                    const dirName = pathParts[0];
+
+                    if (!newDirectories.has(dirName)) {
+                        newDirectories.set(dirName, {
+                            name: dirName,
+                            path: dirName,
+                            files: []
+                        });
+                    }
+
+                    if (file.name.match(/\.(mp3|wav|ogg|m4a|flac|aac)$/i) && file.size > 0) {
+                        newDirectories.get(dirName).files.push({
+                            name: file.name,
+                            path: file.webkitRelativePath,
+                            file: file
+                        });
+                    }
+                }
+            }
+
+            // Update state
+            const newDirsArray = Array.from(newDirectories.values());
+            musicDirectories = [...musicDirectories, ...newDirsArray].sort((a, b) => a.name.localeCompare(b.name));
+
+            allMusicLibrary = {};
+            musicDirectories.forEach(dir => {
+                allMusicLibrary[dir.name] = dir.files.sort((a, b) => a.name.localeCompare(b.name));
+            });
+
+            // Select first directory if none selected
+            if (selectedDirectoryIndex === -1 && musicDirectories.length > 0) {
+                selectedDirectoryIndex = 0;
+                currentMusicLibrary = allMusicLibrary[musicDirectories[0].name] || [];
+            } else if (newDirsArray.length > 0 && selectedDirectoryIndex === -1) {
+                // If new directories were added and no directory was previously selected,
+                // select the first of the newly added directories.
+                const firstNewDirIndex = musicDirectories.findIndex(dir => newDirsArray.some(newDir => newDir.name === dir.name));
+                if (firstNewDirIndex !== -1) {
+                    selectedDirectoryIndex = firstNewDirIndex;
+                    currentMusicLibrary = allMusicLibrary[musicDirectories[selectedDirectoryIndex].name] || [];
+                }
+            } else if (newDirsArray.length > 0 && selectedDirectoryIndex !== -1) {
+                // If new directories are added and a directory is already selected,
+                // keep the current selection.
+            } else if (musicDirectories.length > 0 && selectedDirectoryIndex >= musicDirectories.length) {
+                // Handle case where previously selected index is out of bounds
+                selectedDirectoryIndex = musicDirectories.length - 1;
+                currentMusicLibrary = allMusicLibrary[musicDirectories[selectedDirectoryIndex].name] || [];
+            }
+
+
+            console.log(`Loaded ${musicDirectories.length} directories with ${Object.values(allMusicLibrary).flat().length} songs`);
+
+            // Update UI
+            if (loadedFont) {
+                createSidebarElements();
+                createMusicPageElements();
+            }
+
+            event.target.value = null;
+        });
+
+        // --- Input Handling ---
+        const raycaster = new THREE.Raycaster();
+        const mouse = new THREE.Vector2();
+        let isDragging = false;
+        let clickStartPosition = new THREE.Vector2();
+        let currentView = 'screen'; // Add a variable to track the current view
+
+        function onPointerMove(event) {
+            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+        }
+
+        function onPointerDown(event) {
+            isDragging = false;
+            clickStartPosition.set(event.clientX, event.clientY);
+        }
+
+        function onPointerUp(event) {
+            const dragDistance = clickStartPosition.distanceTo(new THREE.Vector2(event.clientX, event.clientY));
+
+            if (dragDistance < 10) {
+                if (currentView === 'screen') {
+                    raycaster.setFromCamera(mouse, camera);
+
+                    let intersects;
+                    if (currentPage === 'mainMenu' && menuGroup.visible) {
+                        intersects = raycaster.intersectObjects(clickableMeshes.mainMenu);
+                    } else if (currentPage === 'musicPage' && musicPageGroup.visible) {
+                        intersects = raycaster.intersectObjects(clickableMeshes.sidebar);
+                        if (intersects.length === 0) {
+                            intersects = raycaster.intersectObjects(clickableMeshes.musicPage);
+                        }
+                    } else {
+                        intersects = [];
+                    }
+
+                    if (intersects.length > 0) {
+                        const clickedObject = intersects[0].object;
+                        const userData = clickedObject.userData;
+
+                        if (userData?.type === 'menuItem') {
+                            selectMenuItem(userData.index);
+                        } else if (userData?.type === 'musicItem') {
+                            selectMusicItem(userData.index);
+                        } else if (userData?.type === 'addMusicButton') {
+                            addMusicFolder();
+                        } else if (userData?.type === 'directoryItem') {
+                            selectDirectory(userData.index);
+                        }
+                    }
+                }
+            }
+        }
+
+        function onKeyDown(event) {
+            if (currentPage === 'mainMenu') {
+                if (event.key === 'ArrowUp') {
+                    updateMenuSelection(selectedMenuItem - 1);
+                } else if (event.key === 'ArrowDown') {
+                    updateMenuSelection(selectedMenuItem + 1);
+                } else if (event.key === 'Enter') {
+                    selectMenuItem(selectedMenuItem);
+                }
+            } else if (currentPage === 'musicPage') {
+                if (event.key === 'ArrowUp') {
+                    updateMusicSelection(-1);
+                } else if (event.key === 'ArrowDown') {
+                    updateMusicSelection(1);
+                } else if (event.key === 'Enter') {
+                    selectMusicItem(selectedMusicItem);
+                } else if (event.key === 'Escape') {
+                    goBackToMainMenu();
+                }
+            }
+        }
+
+
+
+// Add these new listeners for mouse and keyboard:
+window.addEventListener('mousemove', resetIdleTimer);
+window.addEventListener('keypress', resetIdleTimer);
+window.addEventListener('click', resetIdleTimer);
+
+// // --- Render Loop ---
+// function animate() {
+//     requestAnimationFrame(animate);
+//     controls.update();
+//     renderer.render(scene, camera);
+// }
+
+// ====== ADD THE IDLE SPIN CODE RIGHT HERE ======
+// --- Idle Spin Variables ---
+let lastInteractionTime = Date.now();
+const idleSpinDelay = 30000; // 30 seconds
+let isIdleSpinning = false;
+const idleSpinSpeed = 0.009;
+
+function resetIdleTimer() {
+    lastInteractionTime = Date.now();
+    isIdleSpinning = false;
+}
+
+
+
+
+        // Update these existing event listeners:
+window.addEventListener('pointermove', () => {
+    resetIdleTimer();
+    onPointerMove(event);
+});
+
+window.addEventListener('pointerdown', () => {
+    resetIdleTimer();
+    onPointerDown(event);
+});
+
+window.addEventListener('pointerup', () => {
+    resetIdleTimer();
+    onPointerUp(event);
+});
+
+window.addEventListener('keydown', () => {
+    resetIdleTimer();
+    onKeyDown(event);
+});
+
+// Add these new listeners for mouse and keyboard:
+window.addEventListener('mousemove', resetIdleTimer);
+window.addEventListener('keypress', resetIdleTimer);
+window.addEventListener('click', resetIdleTimer);
+
+// --- Particle System Update ---
+function updateParticles() {
+    const positions = particles.attributes.position.array;
+    const sizes = particles.attributes.size.array;
+    
+    analyser.getByteFrequencyData(dataArray);
+    const averageFrequency = dataArray.reduce((sum, val) => sum + val, 0) / bufferLength;
+    
+    for (let i = 0; i < particleCount; i++) {
+        // Update positions based on velocity
+        positions[i * 3] += particleVelocities[i * 3];
+        positions[i * 3 + 1] += particleVelocities[i * 3 + 1];
+        positions[i * 3 + 2] += particleVelocities[i * 3 + 2];
+        
+        // Add some randomness based on music
+        positions[i * 3] += (Math.random() - 0.5) * 0.02 * (averageFrequency / 255);
+        positions[i * 3 + 2] += (Math.random() - 0.5) * 0.02 * (averageFrequency / 255);
+        
+        // Reset particles that fall below the screen
+        if (positions[i * 3 + 1] < -10) {
+            positions[i * 3] = (Math.random() - 0.5) * 20;
+            positions[i * 3 + 1] = Math.random() * 5 + 10;
+            positions[i * 3 + 2] = (Math.random() - 0.5) * 20;
+            
+            // Slightly vary the size based on music
+            sizes[i] = Math.random() * 0.2 + 0.05 + (averageFrequency / 255) * 0.1;
+        }
+    }
+    
+    particles.attributes.position.needsUpdate = true;
+    particles.attributes.size.needsUpdate = true;
+}
+
+// --- Render Loop ---
+function animate() {
+    requestAnimationFrame(animate);
+    controls.update();
+    
+    // Update particles only when music is playing
+    if (particleSystem.visible) {
+        updateParticles();
+    }
+    
+    renderer.render(scene, camera);
+}
+
+// Modified animate function
+const originalAnimate = animate;
+animate = function() {
+    // Idle check
+    const currentTime = Date.now();
+    if (currentTime - lastInteractionTime > idleSpinDelay && !isIdleSpinning) {
+        isIdleSpinning = true;
+    }
+    
+    // Apply rotation if idle
+    if (isIdleSpinning) {
+        ipodGroup.rotation.y += idleSpinSpeed;
+    }
+    
+    originalAnimate();
+};
+
+// AUDIO VISUALIZER ANIMATIONS
+function animates() {
+    requestAnimationFrame(animates);
+    controls.update();
+    // --- Audio Visualizer Update ---
+    analyser.getByteFrequencyData(dataArray);
+    let average = 0;
+    for (let i = 0; i < bufferLength; i++) {
+        average += dataArray[i];
+    }
+    average /= bufferLength;
+    // Map the average frequency to a scale factor
+    const minScale = 0.8;
+    const maxScale = 1.3; // Adjust for the pulse intensity
+    const scaleRange = maxScale - minScale;
+    const scaleFactor = minScale + (average / 255) * scaleRange;
+
+    // Apply the scale to the center button
+    const centerButton = clickWheelGroup.getObjectByName('centerButtonMesh');
+    if (centerButton) {
+        centerButton.scale.set(scaleFactor, scaleFactor, scaleFactor);
+    }
+
+    // Apply the scale to the outer ring
+    const outerRing = clickWheelGroup.getObjectByName('wheelRingMesh');
+    if (outerRing) {
+        outerRing.scale.set(scaleFactor, scaleFactor, scaleFactor);
+    }
+    // Map the average frequency to the emissive intensity
+    const minIntensity = 0.9;
+    const maxIntensity = 2.0;
+    const intensityRange = maxIntensity - minIntensity;
+    const normalizedAverage = average / 255;
+    // Normalize to 0-1
+    const glowIntensity = minIntensity + normalizedAverage * intensityRange * 2;
+    // Adjust multiplier for sensitivity
+
+    screenMaterial.emissiveIntensity = Math.max(minIntensity, glowIntensity);
+    screenGlowLight.intensity = Math.max(0.5, glowIntensity * 0.8); // Adjust light intensity as well
+    renderer.render(scene, camera);
+}
+
+// Inside your `init` function, name your meshes
+centerButtonMesh.name = 'centerButtonMesh';
+wheelRingMesh.name = 'wheelRingMesh';
+
+// Start animation loop
+animate();
+animates();
+
+// Ensure AudioContext is resumed on user interaction
+window.addEventListener('resize', () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+}, false);
+
+document.addEventListener('click', () => {
+    if (audioContext.state === 'suspended') {
+        audioContext.resume();
+    } 
+});
+
+    </script>
+</body>
+</html>

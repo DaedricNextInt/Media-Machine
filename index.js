@@ -19,7 +19,7 @@ const createWindow = () => {
     },
 
      
-    alwaysOnTop: true
+    alwaysOnTop: false
   });
 
   // and load the index.html of the app.
