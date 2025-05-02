@@ -3,321 +3,326 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>3D CRT TV Model with three.js (GLTF with Canvas Texture - Interactive Menu with Scanlines, Transparent Background)</title>
+    <title>3D CRT TV Model with Video Playback</title>
     <style>
-        body { margin: 0; overflow: hidden; background-color: transparent; } /* Set body background to transparent */
+        body { margin: 0; overflow: hidden; background-color: transparent; }
         canvas { display: block; }
-        /* Style for the off-screen canvas used for the texture */
-        #screenCanvas {
-            display: none; /* Hide the canvas used for the texture */
-        }
+        #screenCanvas { display: none; }
+        #fileInput { display: none; }
     </style>
 </head>
 <body>
     <canvas id="screenCanvas"></canvas>
+    <input type="file" id="fileInput" multiple accept="video/*,audio/*" />
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
     <script>
         let scene, camera, renderer, controls;
         let screenCanvas, screenContext, screenTexture;
-        let screenMesh = null; // Keep a reference to the screen mesh
+        let screenMesh = null;
+        let videoElement = null;
+        let currentVideoIndex = 0;
+        let videoFiles = [];
 
-        // Menu items and state
         const menuItems = ['Music', 'Podcast', 'Videos', 'Settings'];
-        let selectedItemIndex = 0; // Start with the first item selected
-        let isTVOn = false; // Track if the TV is on
-        let showMenu = false; // Track if the menu is currently displayed
+        let selectedItemIndex = 0;
+        let isTVOn = false;
+        let showMenu = false;
+        let isPlayingVideo = false;
 
         function init() {
             // Scene setup
             scene = new THREE.Scene();
-            // Set scene background to null for transparency
             scene.background = null;
 
             // Camera setup
             camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-            camera.position.set(0, 1, 3); // Position the camera
+            camera.position.set(0, 1, 3);
 
             // Renderer setup
-            // Enable alpha for transparency
             renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
             renderer.setSize(window.innerWidth, window.innerHeight);
             document.body.appendChild(renderer.domElement);
 
-            // Add Orbit Controls
+            // Controls
             controls = new THREE.OrbitControls(camera, renderer.domElement);
-            controls.enableDamping = true; // Enable smooth camera movement
+            controls.enableDamping = true;
             controls.dampingFactor = 0.25;
             controls.screenSpacePanning = false;
-            controls.maxPolarAngle = Math.PI / 2; // Prevent camera from going below the ground
+            controls.maxPolarAngle = Math.PI / 2;
 
-            // Add lighting
-            const ambientLight = new THREE.AmbientLight(0x404040); // Soft white light
+            // Lighting
+            const ambientLight = new THREE.AmbientLight(0x404040);
             scene.add(ambientLight);
 
-            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8); // White directional light
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
             directionalLight.position.set(1, 1, 1).normalize();
             scene.add(directionalLight);
 
-            // --- Setup the canvas for the screen texture ---
+            // Screen canvas setup
             screenCanvas = document.getElementById('screenCanvas');
-            // Set a resolution for the screen texture (should match your hidden HTML window size)
             screenCanvas.width = 512;
             screenCanvas.height = 512;
             screenContext = screenCanvas.getContext('2d');
 
-            // Draw the initial "TV Off" state
-            drawScreenContent();
+            // Create video element (hidden)
+            videoElement = document.createElement('video');
+            videoElement.style.display = 'none';
+            document.body.appendChild(videoElement);
+            
+            videoElement.addEventListener('ended', playNextVideo);
+            videoElement.addEventListener('error', handleVideoError);
 
-            // Create a CanvasTexture from the canvas
+            drawScreenContent();
             screenTexture = new THREE.CanvasTexture(screenCanvas);
-            // You might want to set texture filtering properties for better look
             screenTexture.minFilter = THREE.LinearFilter;
             screenTexture.magFilter = THREE.LinearFilter;
-            screenTexture.encoding = THREE.sRGBEncoding; // Important for color accuracy
+            screenTexture.encoding = THREE.sRGBEncoding;
 
-            // Instantiate a loader
+            // File input setup
+            const fileInput = document.getElementById('fileInput');
+            fileInput.addEventListener('change', handleFileSelection);
+
+            // Load GLTF model
             const loader = new THREE.GLTFLoader();
-
-            // Load the glTF resource
-            const gltfPath = 'scene.gltf'; // Assuming your glTF file is named scene.gltf
-
             loader.load(
-                // resource URL
-                gltfPath,
-                // called when the resource is loaded
-                function ( gltf ) {
-                    // Position and scale the model if needed
-                    gltf.scene.position.set(0, -0.26   , 0);
-                    // gltf.scene.scale.set(1, 1, 1); // Adjust scale if necessary
-
-                    // --- Rotate the model to face the camera ---
-                    // Assuming the front of the TV is initially facing away from the camera (+Z)
-                    // Rotate 180 degrees (Math.PI) around the Y-axis
+                'scene.gltf',
+                function(gltf) {
+                    gltf.scene.position.set(0, -0.26, 0);
                     gltf.scene.rotation.y = Math.PI;
-                    // You might need to adjust this rotation based on your specific GLTF model's orientation.
-                    // If the front is facing -X, rotate by Math.PI / 2 around Y, etc.
-                    // If the model is already facing the camera correctly, you can remove this line.
-                    // ------------------------------------------
 
-
-                    // Find the screen mesh and apply the canvas texture
-                    gltf.scene.traverse( function ( child ) {
-                        if ( child.isMesh && child.material ) {
-                             // Check by material name or node name
-                            if ( child.material.name === 'TVScreen' || child.name === 'Screen' ) {
+                    gltf.scene.traverse(function(child) {
+                        if (child.isMesh && child.material) {
+                            if (child.material.name === 'TVScreen' || child.name === 'Screen') {
                                 screenMesh = child;
                                 console.log("Found screen mesh:", screenMesh.name);
 
-                                // Create a new material for the screen using the canvas texture
-                                // We'll copy properties from the original material to keep its other settings
-                                const originalMaterial = screenMesh.material;
                                 const screenMaterial = new THREE.MeshBasicMaterial({
-                                     map: screenTexture,
-                                     // Copy other properties from the original material if needed
-                                     // color: originalMaterial.color,
-                                     // transparent: originalMaterial.transparent,
-                                     // opacity: originalMaterial.opacity,
-                                     // ... etc.
+                                    map: screenTexture,
                                 });
 
-                                 // If the original material was an array of materials, find the correct one
-                                 if (Array.isArray(screenMesh.material)) {
-                                     const materialIndex = screenMesh.material.findIndex(mat => mat.name === 'TVScreen');
-                                     if (materialIndex !== -1) {
-                                         screenMesh.material[materialIndex] = screenMaterial;
-                                     } else {
-                                         // Fallback if material name not found in array, apply to all or first
-                                          screenMesh.material = screenMaterial;
-                                     }
-                                 } else {
-                                     screenMesh.material = screenMaterial;
-                                 }
-
-                                console.log("Applied canvas texture to screen mesh.");
+                                if (Array.isArray(screenMesh.material)) {
+                                    const materialIndex = screenMesh.material.findIndex(mat => mat.name === 'TVScreen');
+                                    if (materialIndex !== -1) {
+                                        screenMesh.material[materialIndex] = screenMaterial;
+                                    } else {
+                                        screenMesh.material = screenMaterial;
+                                    }
+                                } else {
+                                    screenMesh.material = screenMaterial;
+                                }
                             }
                         }
-                    } );
+                    });
 
-                    if (!screenMesh) {
-                         console.warn("Screen mesh not found in the loaded GLTF model. Cannot apply canvas texture.");
-                    }
-
-
-                    scene.add( gltf.scene );
-
+                    scene.add(gltf.scene);
                 },
-                // called while loading is progressing
-                function ( xhr ) {
-                    console.log( ( xhr.loaded / xhr.total * 100 ) + '% loaded' );
+                function(xhr) {
+                    console.log((xhr.loaded / xhr.total * 100) + '% loaded');
                 },
-                // called when loading has errors
-                function ( error ) {
-                    console.error( 'An error happened', error );
+                function(error) {
+                    console.error('An error happened', error);
                 }
             );
 
-            // Add event listeners for keyboard and mouse clicks
             window.addEventListener('keydown', onKeyDown, false);
-            // The onClick function is still here for potential future use with raycasting,
-            // but keyboard navigation is the primary method requested.
-            // renderer.domElement.addEventListener('click', onClick, false);
-
-
-            // Handle window resizing
             window.addEventListener('resize', onWindowResize, false);
         }
 
-        // Function to draw content onto the screen canvas based on TV state
         function drawScreenContent() {
-             // Clear the canvas
-             screenContext.clearRect(0, 0, screenCanvas.width, screenCanvas.height);
+            screenContext.clearRect(0, 0, screenCanvas.width, screenCanvas.height);
 
             if (!isTVOn) {
-                // TV is off - draw a black screen
                 screenContext.fillStyle = '#000000';
                 screenContext.fillRect(0, 0, screenCanvas.width, screenCanvas.height);
+            } else if (isPlayingVideo && videoElement.readyState > 0) {
+                // Draw the current video frame
+                screenContext.drawImage(videoElement, 0, 0, screenCanvas.width, screenCanvas.height);
+                
+                // Add scanlines over the video
+                addScanlines();
             } else {
-                // TV is on
                 if (showMenu) {
-                    // Show the menu list
-                    screenContext.fillStyle = '#0000FF '; // Black background for the menu
+                    screenContext.fillStyle = '#0000FF';
                     screenContext.fillRect(0, 0, screenCanvas.width, screenCanvas.height);
 
                     screenContext.font = 'Bold 40px Arial';
                     screenContext.textAlign = 'center';
 
-                    const startY = screenCanvas.height * 0.3; // Starting Y position for the first item
-                    const lineHeight = 60; // Vertical space between items
+                    const startY = screenCanvas.height * 0.3;
+                    const lineHeight = 60;
 
                     menuItems.forEach((item, index) => {
                         const y = startY + index * lineHeight;
-                        // Highlight the selected item
                         if (index === selectedItemIndex) {
-                            screenContext.fillStyle = '#FFFF00'; // Yellow for selected item
+                            screenContext.fillStyle = '#FFFF00';
                         } else {
-                            screenContext.fillStyle = '#FFFFFF'; // White for unselected items
+                            screenContext.fillStyle = '#FFFFFF';
                         }
                         screenContext.fillText(item, screenCanvas.width / 2, y);
                     });
                 } else {
-                    // TV is on but menu is not shown (e.g., initial blue screen)
-                    screenContext.fillStyle = '#0000FF'; // Blue screen when turned on
+                    screenContext.fillStyle = '#0000FF';
                     screenContext.fillRect(0, 0, screenCanvas.width, screenCanvas.height);
 
-                    screenContext.fillStyle = '#FFFFFF'; // White text
+                    screenContext.fillStyle = '#FFFFFF';
                     screenContext.font = 'Bold 30px Arial';
                     screenContext.textAlign = 'center';
                     screenContext.textBaseline = 'middle';
                     screenContext.fillText('Press Space to Start', screenCanvas.width / 2, screenCanvas.height / 2);
                 }
 
-                // --- Add Scanline Effect ---
-                screenContext.strokeStyle = 'rgba(0, 0, 0, 0.3)'; // Color and opacity of scanlines (semi-transparent black)
-                screenContext.lineWidth = 2; // Thickness of scanlines
-                const scanlineSpacing = 4; // Vertical spacing between scanlines
-
-                for (let i = 0; i < screenCanvas.height; i += scanlineSpacing) {
-                    screenContext.beginPath();
-                    screenContext.moveTo(0, i + 0.5); // Add 0.5 for crisp lines on pixel boundaries
-                    screenContext.lineTo(screenCanvas.width, i + 0.5);
-                    screenContext.stroke();
-                }
-                // --- End Scanline Effect ---
-
+                addScanlines();
             }
 
-             // Update the texture in three.js after drawing
-             if (screenTexture) {
-                 screenTexture.needsUpdate = true;
-             }
+            if (screenTexture) {
+                screenTexture.needsUpdate = true;
+            }
         }
 
-        // Handle keyboard input
+        function addScanlines() {
+            screenContext.strokeStyle = 'rgba(0, 0, 0, 0.3)';
+            screenContext.lineWidth = 2;
+            const scanlineSpacing = 4;
+
+            for (let i = 0; i < screenCanvas.height; i += scanlineSpacing) {
+                screenContext.beginPath();
+                screenContext.moveTo(0, i + 0.5);
+                screenContext.lineTo(screenCanvas.width, i + 0.5);
+                screenContext.stroke();
+            }
+        }
+
         function onKeyDown(event) {
             console.log('Key pressed:', event.key);
 
-            if (event.key === ' ') { // Spacebar
+            if (event.key === ' ') {
                 if (!isTVOn) {
                     isTVOn = true;
-                    // Give it a moment on the blue screen before showing the menu
-                    drawScreenContent(); // Draw blue screen
+                    drawScreenContent();
                     setTimeout(() => {
                         showMenu = true;
-                        selectedItemIndex = 0; // Reset selection when menu appears
-                        drawScreenContent(); // Draw menu
-                    }, 1000); // Show menu after 1 second (adjust as needed)
-                } else {
-                    // If TV is on and space is pressed, maybe hide the menu or go back?
-                    // For now, space only turns it on.
+                        selectedItemIndex = 0;
+                        drawScreenContent();
+                    }, 1000);
+                } else if (isPlayingVideo) {
+                    // Space to pause/play video
+                    if (videoElement.paused) {
+                        videoElement.play();
+                    } else {
+                        videoElement.pause();
+                    }
                 }
-            } else if (isTVOn && showMenu) {
-                // Handle arrow keys only when TV is on and menu is shown
+            } else if (isTVOn && showMenu && !isPlayingVideo) {
                 if (event.key === 'ArrowUp') {
                     selectedItemIndex--;
                     if (selectedItemIndex < 0) {
-                        selectedItemIndex = menuItems.length - 1; // Wrap around to the last item
+                        selectedItemIndex = menuItems.length - 1;
                     }
-                    drawScreenContent(); // Redraw to show selection change
+                    drawScreenContent();
                 } else if (event.key === 'ArrowDown') {
                     selectedItemIndex++;
                     if (selectedItemIndex >= menuItems.length) {
-                        selectedItemIndex = 0; // Wrap around to the first item
+                        selectedItemIndex = 0;
                     }
-                    drawScreenContent(); // Redraw to show selection change
+                    drawScreenContent();
                 } else if (event.key === 'Enter') {
-                    // Handle item selection (optional)
-                    console.log('Selected:', menuItems[selectedItemIndex]);
-                    // You would add logic here to perform actions based on the selected item
+                    if (menuItems[selectedItemIndex] === 'Videos') {
+                        // Trigger file selection
+                        document.getElementById('fileInput').click();
+                    }
+                } else if (event.key === 'Escape' && isPlayingVideo) {
+                    // Escape to exit video playback
+                    stopVideoPlayback();
                 }
             }
         }
 
-         // Handle mouse clicks (kept for potential raycasting use, not used for menu navigation in this version)
-         function onClick(event) {
-             // ... (previous raycasting logic from the last version) ...
-             // If you were using raycasting for menu selection, the logic
-             // to map click coordinates to menu items would go here.
-             // Since we're using keyboard navigation, this function is currently inactive for menu control.
-         }
+        function handleFileSelection(event) {
+    const files = Array.from(event.target.files).filter(file => {
+        // Check if the file is a video by extension and/or MIME type
+        const extension = file.name.toLowerCase().split('.').pop();
+        const videoExtensions = ['mp4', 'webm', 'ogg', 'mov', 'avi', 'mkv', 'flv', 'wmv', 'm4v'];
+        
+        // Also check the file type if available
+        const isVideo = file.type.startsWith('video/') || 
+                        videoExtensions.includes(extension);
+        
+        return isVideo;
+    });
+    
+    if (files.length > 0) {
+        videoFiles = files;
+        currentVideoIndex = 0;
+        playVideo(currentVideoIndex);
+    } else {
+        alert('No supported video files found. Please select MP4, WebM, or Ogg files.');
+    }
+}
 
+        function playVideo(index) {
+            if (index >= 0 && index < videoFiles.length) {
+                const file = videoFiles[index];
+                const videoURL = URL.createObjectURL(file);
+                
+                videoElement.src = videoURL;
+                videoElement.load();
+                
+                videoElement.oncanplay = () => {
+                    isPlayingVideo = true;
+                    showMenu = false;
+                    videoElement.play();
+                    
+                    // Set up animation loop for video playback
+                    function updateVideoFrame() {
+                        if (isPlayingVideo) {
+                            drawScreenContent();
+                            requestAnimationFrame(updateVideoFrame);
+                        }
+                    }
+                    updateVideoFrame();
+                };
+            }
+        }
+
+        function playNextVideo() {
+            currentVideoIndex++;
+            if (currentVideoIndex < videoFiles.length) {
+                playVideo(currentVideoIndex);
+            } else {
+                // Reached end of playlist
+                stopVideoPlayback();
+            }
+        }
+
+        function handleVideoError() {
+            console.error('Error playing video:', videoFiles[currentVideoIndex].name);
+            playNextVideo(); // Skip to next video if current one fails
+        }
+
+        function stopVideoPlayback() {
+            isPlayingVideo = false;
+            showMenu = true;
+            videoElement.pause();
+            videoElement.src = '';
+            drawScreenContent();
+        }
 
         function onWindowResize() {
             camera.aspect = window.innerWidth / window.innerHeight;
             camera.updateProjectionMatrix();
             renderer.setSize(window.innerWidth, window.innerHeight);
-             // If you are using a hidden BrowserWindow with fixed size,
-             // you might not need to update the screenCanvas size here.
-             // If you are using offscreen rendering and want it to match
-             // the 3D screen size, you would need to resize the hidden window
-             // and the screenCanvas accordingly.
         }
 
         function animate() {
             requestAnimationFrame(animate);
-
-            // Update controls
             controls.update();
-
-            // In an Electron app, you would periodically update the screenTexture
-            // with the latest content from the hidden HTML window's canvas/image data.
-            // For example, if using offscreen rendering:
-            // if (screenTexture && screenTexture.needsUpdate) {
-            //    renderer.render(scene, camera); // Render the scene
-            // } else {
-            //    // Only render if the texture needs update or camera/controls changed
-            //    // This depends on how you manage updates from the hidden window.
-            //    renderer.render(scene, camera);
-            // }
-
-            renderer.render(scene, camera); // Render the scene
+            renderer.render(scene, camera);
         }
 
-        // Initialize the scene and start the animation loop
         init();
         animate();
-
     </script>
 </body>
 </html>
