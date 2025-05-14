@@ -20,24 +20,31 @@
             font-family: Arial, sans-serif;
             border-radius: 5px;
             z-index: 10;
+            -webkit-app-region: drag;
         }
         #folder-input {
             display: none;
         }
         #audio-player {
-            position: absolute;
-            bottom: 10px;
-            left: 10px;
-            width: 80%;
-            z-index: 10;
-            opacity: 0.5;
+        position: absolute;
+        bottom: 10px;
+        left: 150px;
+        width: 80%;
+        z-index: 10;
+        opacity: 0.5;
+        /* Custom colors */
+        /* background-color: #ff5500; /* Orange */
+        border-radius: 10px; /* Rounded corners */
+        /* padding: 5px; */
         }
     </style>
 </head>
 <body>
     <div id="view-indicator">Current View: Default</div>
     <input type="file" id="folder-input" webkitdirectory directory multiple />
-    <audio id="audio-player" controls></audio>
+    <audio id="audio-player" controls>
+        
+    </audio>
 
     <script type="importmap">
         {
@@ -85,14 +92,16 @@
         controls.enablePan = false;
 
         // --- IPOD MODEL CODE ---
-        const ipodWidth = 5.5;
-        const ipodHeight = 10;
+        
+        const ipodWidth = 15.5;
+        const ipodHeight = 8;
         const ipodDepth = 1;
-        const screenWidth = 4;
-        const screenHeight = 3;
-        const wheelOuterRadius = 1.5;
+        const screenWidth = 8;
+        const screenHeight = 6;
+        const wheelOuterRadius = .5;
         const wheelInnerRadius = 0.8;
         const buttonRadius = wheelInnerRadius * 0.8;
+        //let isMusicPage = false;
 
         const ipodGroup = new THREE.Group();
         scene.add(ipodGroup);
@@ -110,62 +119,89 @@
         // 2. Screen
         const screenGeometry = new THREE.PlaneGeometry(screenWidth, screenHeight);
         const screenMaterial = new THREE.MeshStandardMaterial({
-    color: 0x000000,       // Base color (black)
-    emissive: 0xF1C232,    // Orange glow color
-    emissiveIntensity: 1.0 // Adjust intensity (0-2)    
-});
+        color: 0x000000,       // Base color (black)
+        emissive: 0xF1C232,    // Orange glow color
+        emissiveIntensity: 1.0 // Adjust intensity (0-2)  
+        });
+       
+        const screenMesh = new THREE.Mesh(screenGeometry, screenMaterial);
+        screenMesh.position.x = 3;
+        screenMesh.position.z = ipodDepth / 2 + 0.01;
+        screenMesh.position.y = (ipodHeight / 2) - 4 ;
+        ipodGroup.add(screenMesh);
+
+        // 3. Image Preview Screen
+        const imageScreen = new THREE.PlaneGeometry(6, screenHeight);
+        const imageScreenMaterial = new THREE.MeshStandardMaterial
+        ({
+        color: 0x000000,       // Base color (black)
+        emissive: 0xF1C232,    // Orange glow color
+        emissiveIntensity: 1.0 // Adjust intensity (0-2)   
+        })
+        const imageScreenMesh = new THREE.Mesh(imageScreen, imageScreenMaterial);
+        imageScreenMesh.position.x = -4.3;
+        imageScreenMesh.position.z = ipodDepth / 2 + 0.01;
+        imageScreenMesh.position.y = (ipodHeight / 2) - 4; 
+        ipodGroup.add(imageScreenMesh);
 
 
         
-        const screenMesh = new THREE.Mesh(screenGeometry, screenMaterial);
-        screenMesh.position.z = ipodDepth / 2 + 0.01;
-        screenMesh.position.y = (ipodHeight / 2) * 0.3;
-        ipodGroup.add(screenMesh);
-
+        
         /*GLOWING EFFECT*/
         const screenGlowLight = new THREE.PointLight(0xff5500, 1, 10); // Orange glow
         screenGlowLight.position.copy(screenMesh.position);
         screenGlowLight.position.z += 0.2; // Slightly in front of the screen
         ipodGroup.add(screenGlowLight);
 
-        // 3. Click Wheel
-        const clickWheelGroup = new THREE.Group();
-        clickWheelGroup.position.y = -(ipodHeight / 2) * 0.35;
-        clickWheelGroup.position.z = ipodDepth / 2 + 0.01;
-        ipodGroup.add(clickWheelGroup);
+        // // 3. Click Wheel
+        // const clickWheelGroup = new THREE.Group();
+        // clickWheelGroup.position.y = -(ipodHeight / 2) * 0.35;
+        // clickWheelGroup.position.z = ipodDepth / 2 + 0.01;
+        // ipodGroup.add(clickWheelGroup);
 
-        // a) Outer Ring
-        const wheelRingGeometry = new THREE.RingGeometry(wheelInnerRadius, wheelOuterRadius, 32);
-        const wheelRingMaterial = new THREE.MeshStandardMaterial({ color: 0xe0e0e0, roughness: 0.7, side: THREE.DoubleSide });
-        const wheelRingMesh = new THREE.Mesh(wheelRingGeometry, wheelRingMaterial);
-        clickWheelGroup.add(wheelRingMesh);
+        // // a) Outer Ring
+        // const wheelRingGeometry = new THREE.RingGeometry(wheelInnerRadius, wheelOuterRadius, 32);
+        // const wheelRingMaterial = new THREE.MeshStandardMaterial({ color: 0xe0e0e0, roughness: 0.7, side: THREE.DoubleSide });
+        // const wheelRingMesh = new THREE.Mesh(wheelRingGeometry, wheelRingMaterial);
+        // clickWheelGroup.add(wheelRingMesh);
 
-        // b) Center Button
-        const centerButtonGeometry = new THREE.CircleGeometry(buttonRadius, 32);
-        const centerButtonMaterial = new THREE.MeshStandardMaterial({ color: 0xf0f0f0, roughness: 0.7 });
-        const centerButtonMesh = new THREE.Mesh(centerButtonGeometry, centerButtonMaterial);
-        clickWheelGroup.add(centerButtonMesh);
+        // // b) Center Button
+        // const centerButtonGeometry = new THREE.CircleGeometry(buttonRadius, 32);
+        // const centerButtonMaterial = new THREE.MeshStandardMaterial({ color: 0xf0f0f0, roughness: 0.7 });
+        // const centerButtonMesh = new THREE.Mesh(centerButtonGeometry, centerButtonMaterial);
+        // clickWheelGroup.add(centerButtonMesh);
 
         // --- Menu & Music System ---
         let selectedMenuItem = 0;
         const menuItems = ["Music", "Photos", "Videos", "Podcasts", "Extras", "Settings", "Shuffle Songs"];
         const menuGroup = new THREE.Group();
+        menuGroup.position.x = 3;
         menuGroup.position.z = ipodDepth / 2 + 0.02;
         menuGroup.position.y = screenMesh.position.y;
         menuGroup.visible = true;
         ipodGroup.add(menuGroup);
+
+        /*MENU TITLE*/
+        const titleGroup = new THREE.Group();
+        titleGroup.position.x = 3;
+        titleGroup.position.z = ipodDepth / 2 + 0.02;
+        titleGroup.position.y = screenMesh.position.y;
+        titleGroup.visible = true;
+        ipodGroup.add(titleGroup);
+
 
         // Music library state
         let allMusicLibrary = {};
         let currentMusicLibrary = [];
         let selectedMusicItem = 0;
         let musicPageScrollOffset = 0;
-        const ITEMS_PER_SCREEN = 5;
+        const ITEMS_PER_SCREEN = 10;
 
         let currentPage = 'mainMenu';
         let loadedFont = null;
 
         const musicPageGroup = new THREE.Group();
+        musicPageGroup.position.x = 3;
         musicPageGroup.position.z = ipodDepth / 2 + 0.02;
         musicPageGroup.position.y = screenMesh.position.y;
         musicPageGroup.visible = false;
@@ -174,7 +210,7 @@
         // --- Music Directory Sidebar ---
         const sidebarGroup = new THREE.Group();
         sidebarGroup.position.z = ipodDepth / 2 + 0.03;
-        sidebarGroup.position.x = screenWidth / 2 + 2 ;
+        sidebarGroup.position.x = screenWidth / 2 + 5 ;
         sidebarGroup.position.y = screenMesh.position.y;
         sidebarGroup.visible = true;
         ipodGroup.add(sidebarGroup);
@@ -205,7 +241,47 @@
         const source = audioContext.createMediaElementSource(audioElement);
         source.connect(analyser);
         analyser.connect(audioContext.destination);
+        
+                
+        
+        
+        // --- Audio Event Listeners ---
+        if (audioElement && audioContext) {
+            audioElement.addEventListener('play', () => {
+                if (audioContext.state === 'suspended') {
+                    audioContext.resume();
+                }
+            });
 
+            audioElement.addEventListener('pause', () => {
+                console.log('Audio paused');
+            });
+
+            audioElement.addEventListener('ended', () => {
+                if (currentPage === 'musicPage' && currentMusicLibrary && currentMusicLibrary.length > 0) {
+                    const nextIndex = (selectedMusicItem + 1) % currentMusicLibrary.length;
+                    selectedMusicItem = nextIndex;
+                    
+                    const selectedDisplayIndex = selectedMusicItem - musicPageScrollOffset;
+                    if (selectedDisplayIndex < 0) {
+                        musicPageScrollOffset = selectedMusicItem;
+                    } else if (selectedDisplayIndex >= ITEMS_PER_SCREEN) {
+                        musicPageScrollOffset = selectedMusicItem - ITEMS_PER_SCREEN + 1;
+                    }
+                    
+                    musicPageScrollOffset = Math.max(0, Math.min(musicPageScrollOffset, currentMusicLibrary.length - ITEMS_PER_SCREEN));
+                    if (currentMusicLibrary.length <= ITEMS_PER_SCREEN) musicPageScrollOffset = 0;
+                    
+                    selectMusicItem(nextIndex);
+                    
+                    if (loadedFont) {
+                        createMusicPageElements();
+                    }
+                }
+            });
+        } else {
+            console.error('Audio element or context is not initialized.');
+        }
 
 
 
@@ -294,7 +370,7 @@
             sidebarGroup.add(addClickPlane);
             clickableMeshes.sidebar.push(addClickPlane);
 
-
+            /*Grabbing music Directories*/
             musicDirectories.forEach((dir, index) => {
                 const row = Math.floor(index / columns);
                 const col = index % columns;
@@ -387,11 +463,85 @@
             selectedMusicItem = 0;
             musicPageScrollOffset = 0;
 
+            updateTitle(dirName);
             updateDirectoryHighlights();
             createMusicPageElements();
 
             console.log(`Selected directory: ${dirName} with ${currentMusicLibrary.length} songs`);
         }
+
+// Ensure 'loadedFont' is available (loaded via FontLoader)
+// Ensure 'titleGroup' is a THREE.Group() already added to your scene
+
+let currentTitleMesh = null; // Reference to the currently displayed title mesh
+
+function updateTitle(newDirectoryName) 
+{
+    if (!loadedFont) {
+        console.error("Font is not loaded yet. Cannot create text geometry.");
+        return;
+    }
+
+    // 1. Remove the old title mesh if it exists
+    if (currentTitleMesh) {
+        titleGroup.remove(currentTitleMesh);
+        if (currentTitleMesh.geometry) {
+            currentTitleMesh.geometry.dispose();
+        }
+        if (currentTitleMesh.material) {
+            currentTitleMesh.material.dispose();
+        }
+        currentTitleMesh = null;
+    }
+
+    // If newDirectoryName is empty or null, we've cleared the title, so return.
+    if (!newDirectoryName) {
+        return;
+    }
+
+    // 2. Create new TextGeometry for the new title
+    const textSize = 0.4; // Adjust size as needed
+    const nameGeometry = new TextGeometry(newDirectoryName, {
+        font: loadedFont,
+        size: textSize,
+        height: 0.01, // Minimal depth for on-screen text
+        // curveSegments: 12, // Optional: for smoother text
+        // bevelEnabled: false // Optional
+    });
+
+    // 3. Center the geometry (optional, but good for consistent placement)
+    nameGeometry.computeBoundingBox();
+    const textWidth = nameGeometry.boundingBox.max.x - nameGeometry.boundingBox.min.x;
+    nameGeometry.translate(-textWidth / 2, 0.9, 0.01); // Center horizontally and adjust vertical alignment
+
+    // 4. Create the mesh
+    const nameMesh = new THREE.Mesh(nameGeometry, new THREE.MeshBasicMaterial({
+        color: 0xffffff,
+        transparent: true,
+        opacity: 0.9
+    }));
+
+    // 5. Position the new title mesh
+    // The positioning (xPos, yPos, itemHeight) depends on your layout.
+    // For a main title, you might position it at the top-center of your screen area.
+    // Example: Centered horizontally, near the top of where `titleGroup` is meant to display.
+    // If titleGroup is at (0,0,0) relative to the screen display area:
+    const titleXPosition = 0;
+    const titleYPosition = screenHeight * 0.4; // Assuming screenHeight is defined, adjust as needed
+    nameMesh.position.set(titleXPosition, titleYPosition, 0.02); // Adjust Z for visibility
+
+    // Your original positioning:
+    // nameMesh.position.set(xPos, yPos - itemHeight + 3.5, 0.02);
+    // If using this, ensure xPos, yPos, and itemHeight are correctly defined in this scope.
+
+    nameMesh.userData = { type: 'directoryTitle', name: newDirectoryName }; // Optional: for identification
+
+    // 6. Add to the scene and update reference
+    titleGroup.add(nameMesh);
+    currentTitleMesh = nameMesh;
+}
+
+
 
         function createMenuItems() {
             if (!loadedFont) return;
@@ -404,6 +554,8 @@
             const menuItemHeight = screenHeight / (menuItems.length + 1);
             const textSize = menuItemHeight * 0.5;
             const startY = (screenHeight / 2) - menuItemHeight;
+            const boxPadding = 0.2;
+            const boxDepth = 0.01;
 
             menuItems.forEach((item, index) => {
                 const textGeometry = new TextGeometry(item, {
@@ -413,6 +565,7 @@
                 });
                 textGeometry.computeBoundingBox();
                 const textWidth = textGeometry.boundingBox.max.x - textGeometry.boundingBox.min.x;
+                const textHeight = textGeometry.boundingBox.max.y - textGeometry.boundingBox.min.y;
                 textGeometry.translate(-textWidth / 2, -textSize/2, 0);
 
                 const textMaterial = new THREE.MeshBasicMaterial({
@@ -422,6 +575,26 @@
                 textMesh.position.y = startY - index * menuItemHeight;
                 textMesh.position.x = 0;
                 menuGroup.add(textMesh);
+
+                if (item.type === "music")
+                {
+                /*Creating the box geometry*/
+                const boxWidth = textWidth + 2 * boxPadding;
+                const boxHeight = textHeight + 2 * boxPadding;
+                const boxGeometry = new THREE.BoxGeometry(boxWidth, boxHeight, boxDepth);
+                const boxMaterial = new THREE.MeshBasicMaterial
+                ({
+                    color: 0x333333, // box color
+                    transparent: true,
+                    opacity: 0.5
+                });
+
+                const boxMesh = new THREE.Mesh(boxGeometry, boxMaterial);
+                boxMesh.position.copy(textMesh.position);
+                boxMesh.position.z -= 0.005;
+                menuGroup.add(boxMesh);
+
+                }
 
                 const planeWidth = screenWidth * 0.9;
                 const clickPlane = new THREE.Mesh(
@@ -458,6 +631,7 @@
             }
             clickableMeshes.musicPage = [];
 
+            //isMusicPage = true;
             const itemHeight = screenHeight / (ITEMS_PER_SCREEN + 1);
             const textSize = itemHeight * 0.5;
             const startY = (screenHeight / 2) - itemHeight;
@@ -567,6 +741,7 @@
                     const textIndex = menuItems.findIndex(item => item === child.geometry.parameters.options.text);
                     if (textIndex !== -1) {
                         child.material.color.setHex(textIndex === selectedMenuItem ? 0xffffff : 0x888888);
+                        
                     }
                 }
                 if (child.name === 'menuSelector') {
@@ -683,7 +858,8 @@
                         newDirectories.get(dirName).files.push({
                             name: file.name,
                             path: file.webkitRelativePath,
-                            file: file
+                            file: file,
+                            type: 'music'
                         });
                     }
                 }
@@ -697,6 +873,9 @@
             musicDirectories.forEach(dir => {
                 allMusicLibrary[dir.name] = dir.files.sort((a, b) => a.name.localeCompare(b.name));
             });
+
+
+       
 
             // Select first directory if none selected
             if (selectedDirectoryIndex === -1 && musicDirectories.length > 0) {
@@ -718,6 +897,22 @@
                 selectedDirectoryIndex = musicDirectories.length - 1;
                 currentMusicLibrary = allMusicLibrary[musicDirectories[selectedDirectoryIndex].name] || [];
             }
+                 /*Updating the music title directory*/
+            if (musicDirectories.length > 0)
+            {
+                let curr_title = "Playlist";
+                
+                if (selectedDirectoryIndex !== -1 && musicDirectories[selectedDirectoryIndex])
+                {
+                    curr_title = musicDirectories[selectedDirectoryIndex].name;
+                }
+                updateTitle(curr_title);
+            }
+            else 
+            {
+                updateTitle(null);
+            }
+
 
 
             console.log(`Loaded ${musicDirectories.length} directories with ${Object.values(allMusicLibrary).flat().length} songs`);
@@ -843,9 +1038,9 @@ function animate() {
 // ====== ADD THE IDLE SPIN CODE RIGHT HERE ======
 // --- Idle Spin Variables ---
 let lastInteractionTime = Date.now();
-const idleSpinDelay = 2000; // 30 seconds
+const idleSpinDelay = 30000; // 30 seconds
 let isIdleSpinning = false;
-const idleSpinSpeed = 0.009;
+const idleSpinSpeed = 0;
 
 function resetIdleTimer() {
     lastInteractionTime = Date.now();
