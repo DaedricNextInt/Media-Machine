@@ -60,6 +60,7 @@
         import { FontLoader } from 'three/addons/loaders/FontLoader.js';
         import { TextGeometry } from 'three/addons/geometries/TextGeometry.js';
         import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+		import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 
         // --- Basic Setup ---
         const scene = new THREE.Scene();
@@ -85,6 +86,13 @@
         directionalLight.position.set(5, 10, 7.5);
         scene.add(directionalLight);
 
+        // /*ROOM FOR REFLECTIONS*/
+        // const environment = new RoomEnvironment();
+        // const pmremGenerator = new THREE.PMREMGenerator(renderer);
+        // scene.environment = pmremGenerator.fromScene(environment).texture;
+
+
+        
         // --- Controls ---
         const controls = new OrbitControls(camera, renderer.domElement);
         controls.enableDamping = true;
@@ -109,7 +117,7 @@
         // 1. iPod Body
         const bodyGeometry = new THREE.BoxGeometry(ipodWidth, ipodHeight, ipodDepth);
         const frontMaterial = new THREE.MeshStandardMaterial({
-             color: 0xffffff, roughness: 0.6, metalness: 0.9 });
+             color: 0xffffff, roughness: 0, metalness: 0.9 });
         const backMaterial = new THREE.MeshStandardMaterial({ color: 0xcccccc, metalness: 0.9, roughness: 0.6 });
         const edgeMaterial = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.6, metalness: 0.9 });
         const bodyMaterials = [edgeMaterial, edgeMaterial, edgeMaterial, edgeMaterial, frontMaterial, backMaterial];
@@ -121,7 +129,9 @@
         const screenMaterial = new THREE.MeshStandardMaterial({
         color: 0x000000,       // Base color (black)
         emissive: 0xF1C232,    // Orange glow color
-        emissiveIntensity: 1.0 // Adjust intensity (0-2)  
+        emissiveIntensity: 1.0, // Adjust intensity (0-2) 
+        roughness: 0,
+        metalness: 1
         });
        
         const screenMesh = new THREE.Mesh(screenGeometry, screenMaterial);
@@ -136,6 +146,8 @@
         ({
         color: 0x000000,       // Base color (black)
         emissive: 0xF1C232,    // Orange glow color
+        roughness: 0.1,
+        // map: texture,
         emissiveIntensity: 1.0 // Adjust intensity (0-2)   
         })
         const imageScreenMesh = new THREE.Mesh(imageScreen, imageScreenMaterial);
@@ -229,6 +241,13 @@
         const audioElement = document.getElementById('audio-player');
         let currentObjectUrl = null;
 
+
+        /*Image Library inits*/
+        let allImageLibrary = {};
+        let currentImageLibrary = [];
+        let selectedImageItem = 0;
+        let currentImageTexture = null;
+        let currentImageMesh = null;
 
 
  // --- Audio Visualizer Setup ---
@@ -772,13 +791,15 @@ function updateTitle(newDirectoryName)
             createMusicPageElements();
         }
 
+        /*SELECTING MENU ITEMS*/
         function selectMenuItem(index) {
             if (currentPage !== 'mainMenu') return;
 
             const item = menuItems[index];
             console.log(`Main Menu Selected: ${item}`);
 
-            if (item === "Music") {
+            if (item === "Music") 
+            {
                 currentPage = 'musicPage';
                 menuGroup.visible = false;
                 musicPageGroup.visible = true;
@@ -786,6 +807,21 @@ function updateTitle(newDirectoryName)
                 selectedMusicItem = 0;
                 musicPageScrollOffset = 0;
                 createMusicPageElements();
+            }
+            /*Here we could implement a photo browser 
+            i.e. file explorer -> find photos files
+            But it just displays the first image if availiable
+            */
+            else if (item === "Photos")
+            {
+                if (Object.keys(allImageLibrary).length > 0)
+                {
+                    const firstDir = Object.Keys(allImageLibrary)[0];
+                    if (allImageLibrary[firstDir].length > 0)
+                    {
+                        displayImage(allImageLibrary[firstDir][0].file);
+                    }
+                }
             }
         }
 
@@ -832,34 +868,109 @@ function updateTitle(newDirectoryName)
         function addMusicFolder() {
             document.getElementById('folder-input').click();
         }
+        
+        // Image Display Function
+        function displayImage(imageFile)
+        {
+            if (currentImageTexture) 
+            {
+                currentImageTexture.dispose();
+                if (currentImageMesh && imageScreenMesh.children.includes(currentImageMesh))
+                {
+                    imageScreenMesh.remove(currentImageMesh);
+                }
+            }
 
+            const reader = new FileReader();
+            reader.onload = function(e) 
+            {
+                const img = new Image();
+                img.onload = function()
+                {
+                    /*Creating the texture from the image*/
+                    currentImageTexture = new THREE.Texture(img);
+                    currentImageTexture.needsUpdate = true;
+
+                    /*Creating mesh to display the image*/
+                    const aspectRatio = img.width / img.height;
+                    let width = 6; // Max Width of image screen
+                    let height = width / aspectRatio;
+
+                    /*If the image is too tall then scale down*/
+                    if (height > screenHeight)
+                    {
+                        height = screenHeight;
+                        width = height * aspectRatio;
+                    }
+
+                    const imageGeometry = new THREE.PlaneGeometry(width, height);
+                    const imageMaterial = new THREE.MeshBasicMaterial
+                    ({
+                        map: currentImageTexture,
+                        side: THREE.DoubleSide
+                    });
+
+                    currentImageMesh = new THREE.Mesh(imageGeometry, imageMaterial);
+                    currentImageMesh.position.z = 0.02;
+                    imageScreenMesh.add(currentImageMesh);
+                };
+                img.src = e.target.result;
+            };
+            reader.readAsDataURL(imageFile);
+        }
+      
         // --- Folder Input Handler ---
         document.getElementById('folder-input').addEventListener('change', (event) => {
             const files = event.target.files;
             const newDirectories = new Map();
+            const newImageDir = new Map();
 
             // Process files and extract directory structure
             for (let i = 0; i < files.length; i++) {
                 const file = files[i];
                 const pathParts = file.webkitRelativePath.split('/');
 
-                if (pathParts.length > 1) {
+                if (pathParts.length > 1) 
+                {
                     const dirName = pathParts[0];
 
-                    if (!newDirectories.has(dirName)) {
-                        newDirectories.set(dirName, {
-                            name: dirName,
-                            path: dirName,
-                            files: []
-                        });
+                        // Handle Music files
+                    if (file.name.match(/\.(mp3|wav|ogg|m4a|flac|aac)$/i) && file.size > 0) 
+                    {
+                        if (!newDirectories.has(dirName)) 
+                        {
+                            newDirectories.set(dirName, 
+                            {
+                                name: dirName,
+                                path: dirName,
+                                files: []
+                            });
+                        }
+                            newDirectories.get(dirName).files.push
+                            ({
+                                name: file.name,
+                                path: file.webkitRelativePath,
+                                file: file,
+                                type: 'music'
+                            });
                     }
-
-                    if (file.name.match(/\.(mp3|wav|ogg|m4a|flac|aac)$/i) && file.size > 0) {
-                        newDirectories.get(dirName).files.push({
+                    else if (file.name.match(/\.(jpg|jpeg|png|gif|bmp|webp)$/i) && file.size > 0)
+                    {
+                        if (!newImageDir.has(dirName))
+                        {
+                            newImageDir.set(dirName, 
+                                {
+                                    name: dirName,
+                                    path: dirName,
+                                    files: []
+                                });
+                        }
+                        newImageDir.get(dirName).files.push
+                        ({
                             name: file.name,
                             path: file.webkitRelativePath,
                             file: file,
-                            type: 'music'
+                            type: 'image'
                         });
                     }
                 }
@@ -874,8 +985,19 @@ function updateTitle(newDirectoryName)
                 allMusicLibrary[dir.name] = dir.files.sort((a, b) => a.name.localeCompare(b.name));
             });
 
+            // Updating image states
+            const newImageDirArray = Array.from(newImageDir.values());
+            allImageLibrary = {};
+            newImageDirArray.forEach(dir => 
+            {
+                allImageLibrary[dir.name] = dir.files.sort((a,b) => a.name.localeCompare(b.name));
+            });
 
-       
+
+            if (newImageDirArray.length > 0 && newImageDirArray[0].files.length > 0)
+            {
+                displayImage(newImageDirArray[0].files[0].file);
+            }
 
             // Select first directory if none selected
             if (selectedDirectoryIndex === -1 && musicDirectories.length > 0) {
