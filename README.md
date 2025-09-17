@@ -1,6 +1,6 @@
 🎵 Media Machine - 3D iPod Music Player
 
-<div style="width:260px;max-width:100%;"><div style="height:0;padding-bottom:52.69%;position:relative;"><iframe width="260" height="137" style="position:absolute;top:0;left:0;width:100%;height:100%;" frameBorder="0" src="https://imgflip.com/embed/a6d5mc"></iframe></div><p><a href="https://imgflip.com/gif/a6d5mc">via Imgflip</a></p></div>
+<img width="260" height="137" alt="image" src="https://github.com/user-attachments/assets/de466c4c-79f5-40ef-967f-57395f3654e7" />
 
 Media Machine is a unique, cross-platform desktop music player built with Electron. It reimagines the music listening experience by ditching traditional HTML/CSS interfaces in favor of a fully interactive, high-fidelity 3D model of a classic iPod, rendered entirely with three.js.
 
