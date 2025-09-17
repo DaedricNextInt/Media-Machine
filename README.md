@@ -4,14 +4,13 @@ Of course. Here is the README section from the previous response, formatted in M
 
 # 🎵 Media Machine - 3D iPod Music Player
 
-!(https://imgflip.com/gif/a6d5mc)
+<img width="400" height="400" alt="image" src="https://github.com/user-attachments/assets/eeb2fea0-f3cc-4b20-af9f-65afdd8d665b" />
+
 **Media Machine** is a unique, cross-platform desktop music player built with Electron. It reimagines the music listening experience by ditching traditional HTML/CSS interfaces in favor of a fully interactive, high-fidelity 3D model of a classic iPod, rendered entirely with `three.js`.
 
 This project combines the power of desktop applications with the creative potential of WebGL to create a nostalgic yet modern media player.
 
-\!([https://via.placeholder.com/600x400.png?text=Media+Machine+UI](https://www.google.com/search?q=https://via.placeholder.com/600x400.png%3Ftext%3DMedia%2BMachine%2BUI))
 
-> **Note:** It is highly recommended to replace the placeholder above with a high-quality screenshot or GIF of your application in action.
 
 -----
 
